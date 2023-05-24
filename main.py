@@ -7,12 +7,13 @@ HOSTS = ["192.168.1.2", "192.168.1.3", "192.168.1.4"]
 credentials = {
     "username": "",
     "password": "",
+    "known_hosts": None,
 }
 
 
 async def run_client(host, command: str) -> asyncssh.SSHCompletedProcess:
-    async with asyncssh.connect(JUMP_HOST, known_hosts=None, **credentials):
-        async with asyncssh.connect(host, known_hosts=None, **credentials) as conn:
+    async with asyncssh.connect(JUMP_HOST, **credentials):
+        async with asyncssh.connect(host, **credentials) as conn:
             return await conn.run(command)
 
 
