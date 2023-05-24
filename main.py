@@ -23,13 +23,13 @@ async def run_multiple_clients(command: str) -> None:
 
     for i, result in enumerate(results, 1):
         if isinstance(result, Exception):
-            print('Task %d failed: %s' % (i, str(result)))
+            print(f"Task {i} failed: {str(result)}")
         elif result.exit_status != 0:
-            print('Task %d exited with status %s:' % (i, result.exit_status))
-            print(result.stderr, end='')
+            print(f"Task {i} exited with status {result.exit_status}:")
+            print(result.stderr, end="")
         else:
-            print('Task %d succeeded:' % i)
-            print(result.stdout, end='')
+            print(f"Task {i} succeeded:")
+            print(result.stdout, end="")
 
         print(75*'-')
 
