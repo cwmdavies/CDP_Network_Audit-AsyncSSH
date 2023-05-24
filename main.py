@@ -1,8 +1,8 @@
 import asyncssh
 import asyncio
 
-USERNAME = "chris"
-PASSWORD = "!Lepsodizle0!"
+USERNAME = ""
+PASSWORD = ""
 JUMP_HOST = '192.168.1.1'
 HOSTS = ["192.168.1.2", "192.168.1.3", "192.168.1.4"]
 
