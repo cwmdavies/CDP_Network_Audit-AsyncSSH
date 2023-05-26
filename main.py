@@ -1,19 +1,25 @@
 import asyncssh
 import asyncio
 
-JUMP_HOST = '192.168.1.1'
-HOSTS = ["192.168.1.2", "192.168.1.3", "192.168.1.4"]
+JUMP_HOST = ""
+HOSTS = [""]
+
+encryption_algs_list = ["aes128-cbc", "3des-cbc", "aes192-cbc", "aes256-cbc", "aes256-ctr"]
+kex_algs_list = ["diffie-hellman-group-exchange-sha1", "diffie-hellman-group14-sha1", "diffie-hellman-group1-sha1"]
+
 
 credentials = {
     "username": "",
-    "password": "",
+    "password": "_",
     "known_hosts": None,
+    "encryption_algs": encryption_algs_list,
+    "kex_algs": kex_algs_list,
 }
 
 
 async def run_client(host, command: str) -> asyncssh.SSHCompletedProcess:
-    async with asyncssh.connect(JUMP_HOST, **credentials):
-        async with asyncssh.connect(host, **credentials) as conn:
+    async with asyncssh.connect(JUMP_HOST, **credentials) as tunnel:
+        async with asyncssh.connect(host, tunnel=tunnel, **credentials) as conn:
             return await conn.run(command)
 
 
