@@ -16,7 +16,6 @@ HOST = ""
 encryption_algs_list = ["aes128-cbc", "3des-cbc", "aes192-cbc", "aes256-cbc", "aes256-ctr"]
 kex_algs_list = ["diffie-hellman-group-exchange-sha1", "diffie-hellman-group14-sha1", "diffie-hellman-group1-sha1"]
 
-
 credentials = {
     "username": "",
     "password": "",
@@ -141,7 +140,6 @@ async def main():
             break
 
     end = time.perf_counter()
-    print(f"Script finished in {end - start:0.4f} seconds")
 
     audit_array = pandas.DataFrame(collection_of_results, columns=["LOCAL_HOST",
                                                                    "LOCAL_IP",
@@ -161,11 +159,11 @@ async def main():
 
     wb = openpyxl.load_workbook(filepath)
     ws1 = wb["Audit"]
-    ws1["B4"] = "Not Specified"
-    ws1["B5"] = "Not Specified"
-    ws1["B6"] = "Not Specified"
-    ws1["B7"] = HOST
-    ws1["B8"] = "Not Specified"
+    ws1["B4"] = "Not Specified"     # Site Code
+    ws1["B5"] = "Not Specified"     # Date
+    ws1["B6"] = "Not Specified"     # Time
+    ws1["B7"] = HOST                # Seed IP Address 1
+    ws1["B8"] = "Not Specified"     # Seed IP Address 2
     wb.save(filepath)
     wb.close()
 
@@ -174,6 +172,7 @@ async def main():
     dns_array.to_excel(writer, index=False, sheet_name="DNS Resolved", header=False, startrow=4)
 
     writer.close()
+    print(f"Script finished in {end - start:0.4f} seconds")
 
 if __name__ == "__main__":
     asyncio.get_event_loop().run_until_complete(main())
