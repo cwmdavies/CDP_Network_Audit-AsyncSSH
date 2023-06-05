@@ -6,16 +6,16 @@ import asyncssh
 import asyncio
 
 
-JUMP_HOST = ""
-HOST = ""
+JUMP_HOST = "192.168.1.1"
+HOST = "192.168.1.2"
 
 encryption_algs_list = ["aes128-cbc", "3des-cbc", "aes192-cbc", "aes256-cbc", "aes256-ctr"]
 kex_algs_list = ["diffie-hellman-group-exchange-sha1", "diffie-hellman-group14-sha1", "diffie-hellman-group1-sha1"]
 
 
 credentials = {
-    "username": "",
-    "password": "",
+    "username": "chris",
+    "password": "!Lepsodizle0!",
     "known_hosts": None,
     "encryption_algs": encryption_algs_list,
     "kex_algs": kex_algs_list,
@@ -137,7 +137,14 @@ credentials = {
 #     return hostname
 
 
-async def run_client(host, command: str) -> asyncssh.SSHCompletedProcess:
+async def direct_client(host, command: str) -> asyncssh.SSHCompletedProcess:
+    print(f"Running Direct Client function")
+    async with asyncssh.connect(host, **credentials) as conn:
+        return await conn.run(command)
+
+
+async def tunnel_client(host, command: str) -> asyncssh.SSHCompletedProcess:
+    print("Running Tunnel Client Function")
     async with asyncssh.connect(JUMP_HOST, **credentials) as tunnel:
         async with asyncssh.connect(host, tunnel=tunnel, **credentials) as conn:
             return await conn.run(command)
@@ -148,24 +155,39 @@ async def main():
     queue = asyncio.Queue()
     queue.put_nowait(HOST)
 
-    output = await run_client(HOST, "show cdp neighbors detail")
-    get_hostname = await run_client(HOST, "show run | inc hostname")
+    while True:
+        ip_address = queue.get_nowait()
 
-    with open("textfsm/hostname.textfsm") as f:
-        re_table = textfsm.TextFSM(f)
-        result = re_table.ParseText(get_hostname.stdout)
-        hostname = result[0][0]
+        try:
+            print(f"Attempting to get CDP information for IP Address: {ip_address}")
+            output = await direct_client(ip_address, "show cdp neighbors detail")
 
-    with open("textfsm/cisco_ios_show_cdp_neighbors_detail.textfsm") as f:
-        re_table = textfsm.TextFSM(f)
-        result = re_table.ParseText(output.stdout)
-    result = [dict(zip(re_table.header, entry)) for entry in result]
-    for entry in result:
-        entry['LOCAL_IP'] = HOST
-        entry['LOCAL_HOST'] = hostname.upper()
-        text = entry['DESTINATION_HOST']
-        head, sep, tail = text.partition('.')
-        entry['DESTINATION_HOST'] = head.upper()
+            print(f"Attempting to get Hostname for IP Address: {ip_address} ")
+            get_hostname = await direct_client(ip_address, "show run | inc hostname")
+
+            with open("textfsm/hostname.textfsm") as f:
+                re_table = textfsm.TextFSM(f)
+                result = re_table.ParseText(get_hostname.stdout)
+                hostname = result[0][0]
+
+            with open("textfsm/cisco_ios_show_cdp_neighbors_detail.textfsm") as f:
+                re_table = textfsm.TextFSM(f)
+                result = re_table.ParseText(output.stdout)
+            result = [dict(zip(re_table.header, entry)) for entry in result]
+            for entry in result:
+                entry['LOCAL_IP'] = ip_address
+                entry['LOCAL_HOST'] = hostname.upper()
+                text = entry['DESTINATION_HOST']
+                head, sep, tail = text.partition('.')
+                entry['DESTINATION_HOST'] = head.upper()
+                await queue.put(entry["MANAGEMENT_IP"])
+        except Exception as Err:
+            print(f"An error occurred: {Err} ")
+
+        queue.task_done()
+        if queue.empty():
+            break
+
     print(result)
 
     end = time.perf_counter()
