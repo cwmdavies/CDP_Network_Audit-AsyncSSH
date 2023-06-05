@@ -6,16 +6,16 @@ import asyncssh
 import asyncio
 
 
-JUMP_HOST = "10.251.131.6"
-HOST = "10.112.224.27"
+JUMP_HOST = ""
+HOST = ""
 
 encryption_algs_list = ["aes128-cbc", "3des-cbc", "aes192-cbc", "aes256-cbc", "aes256-ctr"]
 kex_algs_list = ["diffie-hellman-group-exchange-sha1", "diffie-hellman-group14-sha1", "diffie-hellman-group1-sha1"]
 
 
 credentials = {
-    "username": "adm.davies",
-    "password": "_Lepsodizle0_",
+    "username": "",
+    "password": "",
     "known_hosts": None,
     "encryption_algs": encryption_algs_list,
     "kex_algs": kex_algs_list,
