@@ -147,13 +147,13 @@ async def main():
     for i in hostnames:
         await dns_queue.put(i)
     while True:
+        if dns_queue.empty():
+            break
         get_hostname_from_queue = dns_queue.get_nowait()
         print(f"Attempting to resolve IP Address for hostname: {get_hostname_from_queue}")
         host_ip_addr = await dns_resolve(get_hostname_from_queue)
         DNS_IP[get_hostname_from_queue] = host_ip_addr
         dns_queue.task_done()
-        if dns_queue.empty():
-            break
 
     end = time.perf_counter()
 
