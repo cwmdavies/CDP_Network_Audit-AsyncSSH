@@ -2,7 +2,6 @@ import ipaddress
 import shutil
 import socket
 import time
-import logging
 import openpyxl as openpyxl
 import pandas as pandas
 import textfsm
@@ -86,12 +85,12 @@ async def dns_resolve(domain_name) -> str:
     :return: None. Saves IP Address and domain name to a dictionary. Example: {"google.com": "142.250.200.14"}
     """
     try:
-        logging.info(f"Attempting to retrieve DNS 'A' record for hostname: {domain_name}")
+        log.info(f"Attempting to retrieve DNS 'A' record for hostname: {domain_name}")
         addr1 = socket.gethostbyname(domain_name)
-        logging.info(f"Successfully retrieved DNS 'A' record for hostname: {domain_name}")
+        log.info(f"Successfully retrieved DNS 'A' record for hostname: {domain_name}")
         return addr1
     except socket.gaierror:
-        log.error(f"No DNS A record found for domain name: {domain_name}")
+        log.error(f"No DNS A record found for domain name: {domain_name}", exc_info=True)
         return "No DNS A record found"
     except Exception as Err:
         log.error(f"An unknown error occurred for hostname: {domain_name}, {Err}", exc_info=True)
@@ -99,13 +98,13 @@ async def dns_resolve(domain_name) -> str:
 
 
 async def direct_client(host, command: str) -> asyncssh.SSHCompletedProcess:
-    print(f"Running Direct Client function")
+    log.info(f"Running Direct Client function")
     async with asyncssh.connect(host, **credentials) as conn:
         return await conn.run(command)
 
 
 async def tunnel_client(host, command: str) -> asyncssh.SSHCompletedProcess:
-    print("Running Tunnel Client Function")
+    log.info("Running Tunnel Client Function")
     async with asyncssh.connect(jump_server, **credentials) as tunnel:
         async with asyncssh.connect(host, tunnel=tunnel, **credentials) as conn:
             return await conn.run(command)
@@ -118,7 +117,7 @@ async def main():
     ip_addresses = []
 
     if not IPAddr1:
-        logging.error("No IP Address specified, exiting script!")
+        log.error("No IP Address specified, exiting script!")
         sys.exit()
 
     queue = asyncio.Queue()
@@ -136,13 +135,13 @@ async def main():
         ip_addresses.append(ip_address)
 
         try:
-            print(f"Attempting to get Hostname for IP Address: {ip_address} ")
-            if jump_server is None:
+            log.info(f"Attempting to get Hostname for IP Address: {ip_address} ")
+            if jump_server == "None":
                 get_hostname = await direct_client(ip_address, "show run | inc hostname")
             else:
                 get_hostname = await tunnel_client(ip_address, "show run | inc hostname")
 
-            print(f"Hostname for IP Address: {ip_address} successfully retrieved")
+            log.info(f"Hostname for IP Address: {ip_address} successfully retrieved")
             with open("textfsm/hostname.textfsm") as f:
                 re_table = textfsm.TextFSM(f)
                 result = re_table.ParseText(get_hostname.stdout)
@@ -151,9 +150,9 @@ async def main():
             if hostname not in hostnames:
                 hostnames.append(hostname)
 
-                print(f"Attempting to get CDP information for IP Address: {ip_address}")
+                log.info(f"Attempting to get CDP information for IP Address: {ip_address}")
 
-                if jump_server is None:
+                if jump_server == "None":
                     output = await direct_client(ip_address, "show cdp neighbors detail")
                 else:
                     output = await tunnel_client(ip_address, "show cdp neighbors detail")
@@ -176,10 +175,10 @@ async def main():
             queue.task_done()
 
         except TimeoutError:
-            log.error("A Timeout error occurred!")
+            log.error(f"A Timeout error occurred for IP Address: {ip_address}!", exc_info=True)
             CONNECTION_ERRORS.append(ip_address)
         except asyncssh.misc.PermissionDenied:
-            log.error(f"Authentication Failed for IP Address: {ip_address}!")
+            log.error(f"Authentication Failed for IP Address: {ip_address}!", exc_info=True)
             AUTHENTICATION_ERRORS.append(ip_address)
         except Exception as Err:
             log.error(f"An unknown error occurred: {Err}", exc_info=True)
@@ -191,12 +190,10 @@ async def main():
         if dns_queue.empty():
             break
         get_hostname_from_queue = dns_queue.get_nowait()
-        print(f"Attempting to resolve IP Address for hostname: {get_hostname_from_queue}")
+        log.info(f"Attempting to resolve IP Address for hostname: {get_hostname_from_queue}")
         host_ip_addr = await dns_resolve(get_hostname_from_queue)
         DNS_IP[get_hostname_from_queue] = host_ip_addr
         dns_queue.task_done()
-
-    end = time.perf_counter()
 
     audit_array = pandas.DataFrame(collection_of_results, columns=["LOCAL_HOST",
                                                                    "LOCAL_IP",
@@ -233,7 +230,8 @@ async def main():
     auth_array.to_excel(writer, index=False, sheet_name="Authentication Errors", header=False, startrow=4)
 
     writer.close()
-    print(f"Script finished in {end - start:0.4f} seconds")
+    end = time.perf_counter()
+    log.info(f"Script finished in {end - start:0.4f} seconds")
 
 if __name__ == "__main__":
     asyncio.get_event_loop().run_until_complete(main())
