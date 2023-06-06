@@ -7,6 +7,7 @@ import openpyxl as openpyxl
 import pandas as pandas
 import textfsm
 import datetime
+import sys
 import asyncssh
 import asyncio
 
@@ -90,6 +91,11 @@ async def main():
     collection_of_results = []
     hostnames = []
     ip_addresses = []
+
+    if not HOST1:
+        logging.error("No IP Address specified, exiting script!")
+        sys.exit()
+
     queue = asyncio.Queue()
     queue.put_nowait(HOST1)
 
