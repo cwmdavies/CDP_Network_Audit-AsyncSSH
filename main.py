@@ -6,12 +6,20 @@ import logging
 import openpyxl as openpyxl
 import pandas as pandas
 import textfsm
+import datetime
 import asyncssh
 import asyncio
 
-DNS_IP = {}
 JUMP_HOST = ""
-HOST = ""
+HOST1 = ""
+HOST2 = ""
+
+DNS_IP = {}
+AUTHENTICATION_ERRORS = []
+CONNECTION_ERRORS = []
+DATE_TIME_NOW = datetime.datetime.now()
+DATE_NOW = DATE_TIME_NOW.strftime("%d %B %Y")
+TIME_NOW = DATE_TIME_NOW.strftime("%H:%M")
 
 encryption_algs_list = ["aes128-cbc", "3des-cbc", "aes192-cbc", "aes256-cbc", "aes256-ctr"]
 kex_algs_list = ["diffie-hellman-group-exchange-sha1", "diffie-hellman-group14-sha1", "diffie-hellman-group1-sha1"]
@@ -44,7 +52,7 @@ def ip_check(ip) -> bool:
         return False
 
 
-async def dns_resolve(domain_name) -> None:
+async def dns_resolve(domain_name) -> str:
     """
     Takes in a domain name and does a DNS lookup on it.
     Saves the information to a dictionary
@@ -54,14 +62,14 @@ async def dns_resolve(domain_name) -> None:
     try:
         logging.info(f"Attempting to retrieve DNS 'A' record for hostname: {domain_name}")
         addr1 = socket.gethostbyname(domain_name)
-        DNS_IP[domain_name] = addr1
         logging.info(f"Successfully retrieved DNS 'A' record for hostname: {domain_name}")
+        return addr1
+    except socket.gaierror:
+        logging.error(f"No DNS A record found for domain name: {domain_name}")
+        return "No DNS A record found"
     except Exception as Err:
-        print(Err)
-        logging.error(f"Failed to retrieve DNS A record for hostname: {domain_name}",
-                      exc_info=True
-                      )
-        DNS_IP[domain_name] = "DNS Resolution Failed"
+        logging.error(f"An unknown error occurred for hostname: {domain_name}, {Err}", exc_info=True)
+        return "DNS Resolution Failed"
 
 
 async def direct_client(host, command: str) -> asyncssh.SSHCompletedProcess:
@@ -83,7 +91,7 @@ async def main():
     hostnames = []
     ip_addresses = []
     queue = asyncio.Queue()
-    queue.put_nowait(HOST)
+    queue.put_nowait(HOST1)
 
     dns_queue = asyncio.Queue()
 
@@ -124,17 +132,25 @@ async def main():
                         if 'Switch' in entry['CAPABILITIES'] and "Host" not in entry['CAPABILITIES']:
                             await queue.put(entry["MANAGEMENT_IP"])
 
-        except Exception as Err:
-            print(f"An error occurred: {Err} ")
+            queue.task_done()
 
-        queue.task_done()
+        except TimeoutError:
+            logging.error("A Timeout error occurred!")
+            CONNECTION_ERRORS.append(ip_address)
+        except asyncssh.misc.PermissionDenied:
+            logging.error(f"Authentication Failed for IP Address: {ip_address}!")
+            AUTHENTICATION_ERRORS.append(ip_address)
+        except Exception as Err:
+            logging.error(f"An unknown error occurred: {Err}", exc_info=True)
+            CONNECTION_ERRORS.append(ip_address)
 
     for i in hostnames:
-        dns_queue.put_nowait(i)
+        await dns_queue.put(i)
     while True:
         get_hostname_from_queue = dns_queue.get_nowait()
         print(f"Attempting to resolve IP Address for hostname: {get_hostname_from_queue}")
-        await dns_resolve(get_hostname_from_queue)
+        host_ip_addr = await dns_resolve(get_hostname_from_queue)
+        DNS_IP[get_hostname_from_queue] = host_ip_addr
         dns_queue.task_done()
         if dns_queue.empty():
             break
@@ -152,6 +168,8 @@ async def main():
                                                                    "CAPABILITIES"
                                                                    ])
     dns_array = pandas.DataFrame(DNS_IP.items(), columns=["Hostname", "IP Address"])
+    conn_array = pandas.DataFrame(CONNECTION_ERRORS, columns=["Connection Errors"])
+    auth_array = pandas.DataFrame(AUTHENTICATION_ERRORS, columns=["Authentication Errors"])
 
     filepath = "Test_CDP Switch Audit.xlsx"
     excel_template = "1 - CDP Switch Audit _ Template.xlsx"
@@ -160,9 +178,9 @@ async def main():
     wb = openpyxl.load_workbook(filepath)
     ws1 = wb["Audit"]
     ws1["B4"] = "Not Specified"     # Site Code
-    ws1["B5"] = "Not Specified"     # Date
-    ws1["B6"] = "Not Specified"     # Time
-    ws1["B7"] = HOST                # Seed IP Address 1
+    ws1["B5"] = DATE_NOW            # Date
+    ws1["B6"] = TIME_NOW            # Time
+    ws1["B7"] = HOST1               # Seed IP Address 1
     ws1["B8"] = "Not Specified"     # Seed IP Address 2
     wb.save(filepath)
     wb.close()
@@ -170,6 +188,8 @@ async def main():
     writer = pandas.ExcelWriter(filepath, engine='openpyxl', if_sheet_exists="overlay", mode="a")
     audit_array.to_excel(writer, index=False, sheet_name="Audit", header=False, startrow=11)
     dns_array.to_excel(writer, index=False, sheet_name="DNS Resolved", header=False, startrow=4)
+    conn_array.to_excel(writer, index=False, sheet_name="Connection Errors", header=False, startrow=4)
+    auth_array.to_excel(writer, index=False, sheet_name="Authentication Errors", header=False, startrow=4)
 
     writer.close()
     print(f"Script finished in {end - start:0.4f} seconds")
