@@ -11,6 +11,7 @@ import sys
 import asyncssh
 import asyncio
 import MyPackage.MyGui as MyGui
+from MyPackage import config_params
 import logging.config
 
 MyGui.root.mainloop()
@@ -39,6 +40,14 @@ logging.config.fileConfig(fname='config_files/logging_configuration.conf',
                           )
 log = logging.getLogger(__name__)
 
+JUMP_SERVER_KEYS = list(config_params.Jump_Servers.keys())
+JUMP_SERVER_DICT = dict(config_params.Jump_Servers)
+if MyGui.my_gui.JumpServer_var.get() == JUMP_SERVER_KEYS[0].upper():
+    jump_server = JUMP_SERVER_DICT[JUMP_SERVER_KEYS[0]]
+if MyGui.my_gui.JumpServer_var.get() == JUMP_SERVER_KEYS[1].upper():
+    jump_server = JUMP_SERVER_DICT[JUMP_SERVER_KEYS[1]]
+if MyGui.my_gui.JumpServer_var.get() == "None":
+    jump_server = "None"
 
 encryption_algs_list = ["aes128-cbc", "3des-cbc", "aes192-cbc", "aes256-cbc", "aes256-ctr"]
 kex_algs_list = ["diffie-hellman-group-exchange-sha1", "diffie-hellman-group14-sha1", "diffie-hellman-group1-sha1"]
@@ -128,7 +137,11 @@ async def main():
 
         try:
             print(f"Attempting to get Hostname for IP Address: {ip_address} ")
-            get_hostname = await direct_client(ip_address, "show run | inc hostname")
+            if jump_server is None:
+                get_hostname = await direct_client(ip_address, "show run | inc hostname")
+            else:
+                get_hostname = await tunnel_client(ip_address, "show run | inc hostname")
+
             print(f"Hostname for IP Address: {ip_address} successfully retrieved")
             with open("textfsm/hostname.textfsm") as f:
                 re_table = textfsm.TextFSM(f)
@@ -139,7 +152,11 @@ async def main():
                 hostnames.append(hostname)
 
                 print(f"Attempting to get CDP information for IP Address: {ip_address}")
-                output = await direct_client(ip_address, "show cdp neighbors detail")
+
+                if jump_server is None:
+                    output = await direct_client(ip_address, "show cdp neighbors detail")
+                else:
+                    output = await tunnel_client(ip_address, "show cdp neighbors detail")
 
                 with open("textfsm/cisco_ios_show_cdp_neighbors_detail.textfsm") as f:
                     re_table = textfsm.TextFSM(f)
