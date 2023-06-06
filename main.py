@@ -10,10 +10,22 @@ import datetime
 import sys
 import asyncssh
 import asyncio
+import MyPackage.MyGui as MyGui
+import logging.config
 
-JUMP_HOST = ""
-HOST1 = ""
-HOST2 = ""
+MyGui.root.mainloop()
+SiteName = MyGui.my_gui.SiteName_var.get()
+jump_server = MyGui.my_gui.JumpServer_var.get()
+_USERNAME = MyGui.my_gui.Username_var.get()
+_PASSWORD = MyGui.my_gui.password_var.get()
+IPAddr1 = MyGui.my_gui.IP_Address1_var.get()
+
+if MyGui.my_gui.IP_Address2_var.get():
+    IPAddr2 = MyGui.my_gui.IP_Address2_var.get()
+else:
+    IPAddr2 = None
+
+FolderPath = MyGui.my_gui.FolderPath_var.get()
 
 DNS_IP = {}
 AUTHENTICATION_ERRORS = []
@@ -22,12 +34,18 @@ DATE_TIME_NOW = datetime.datetime.now()
 DATE_NOW = DATE_TIME_NOW.strftime("%d %B %Y")
 TIME_NOW = DATE_TIME_NOW.strftime("%H:%M")
 
+logging.config.fileConfig(fname='config_files/logging_configuration.conf',
+                          disable_existing_loggers=False,
+                          )
+log = logging.getLogger(__name__)
+
+
 encryption_algs_list = ["aes128-cbc", "3des-cbc", "aes192-cbc", "aes256-cbc", "aes256-ctr"]
 kex_algs_list = ["diffie-hellman-group-exchange-sha1", "diffie-hellman-group14-sha1", "diffie-hellman-group1-sha1"]
 
 credentials = {
-    "username": "",
-    "password": "",
+    "username": _USERNAME,
+    "password": _PASSWORD,
     "known_hosts": None,
     "encryption_algs": encryption_algs_list,
     "kex_algs": kex_algs_list,
@@ -47,9 +65,7 @@ def ip_check(ip) -> bool:
         ipaddress.ip_address(ip)
         return True
     except Exception as Err:
-        print(
-            f"An error occurred: {Err}",
-            )
+        log.error(f"An error occurred: {Err}",)
         return False
 
 
@@ -66,10 +82,10 @@ async def dns_resolve(domain_name) -> str:
         logging.info(f"Successfully retrieved DNS 'A' record for hostname: {domain_name}")
         return addr1
     except socket.gaierror:
-        logging.error(f"No DNS A record found for domain name: {domain_name}")
+        log.error(f"No DNS A record found for domain name: {domain_name}")
         return "No DNS A record found"
     except Exception as Err:
-        logging.error(f"An unknown error occurred for hostname: {domain_name}, {Err}", exc_info=True)
+        log.error(f"An unknown error occurred for hostname: {domain_name}, {Err}", exc_info=True)
         return "DNS Resolution Failed"
 
 
@@ -81,7 +97,7 @@ async def direct_client(host, command: str) -> asyncssh.SSHCompletedProcess:
 
 async def tunnel_client(host, command: str) -> asyncssh.SSHCompletedProcess:
     print("Running Tunnel Client Function")
-    async with asyncssh.connect(JUMP_HOST, **credentials) as tunnel:
+    async with asyncssh.connect(jump_server, **credentials) as tunnel:
         async with asyncssh.connect(host, tunnel=tunnel, **credentials) as conn:
             return await conn.run(command)
 
@@ -92,12 +108,14 @@ async def main():
     hostnames = []
     ip_addresses = []
 
-    if not HOST1:
+    if not IPAddr1:
         logging.error("No IP Address specified, exiting script!")
         sys.exit()
 
     queue = asyncio.Queue()
-    queue.put_nowait(HOST1)
+    queue.put_nowait(IPAddr1)
+    if IPAddr2 is not None:
+        queue.put_nowait(IPAddr2)
 
     dns_queue = asyncio.Queue()
 
@@ -141,13 +159,13 @@ async def main():
             queue.task_done()
 
         except TimeoutError:
-            logging.error("A Timeout error occurred!")
+            log.error("A Timeout error occurred!")
             CONNECTION_ERRORS.append(ip_address)
         except asyncssh.misc.PermissionDenied:
-            logging.error(f"Authentication Failed for IP Address: {ip_address}!")
+            log.error(f"Authentication Failed for IP Address: {ip_address}!")
             AUTHENTICATION_ERRORS.append(ip_address)
         except Exception as Err:
-            logging.error(f"An unknown error occurred: {Err}", exc_info=True)
+            log.error(f"An unknown error occurred: {Err}", exc_info=True)
             CONNECTION_ERRORS.append(ip_address)
 
     for i in hostnames:
@@ -177,17 +195,17 @@ async def main():
     conn_array = pandas.DataFrame(CONNECTION_ERRORS, columns=["Connection Errors"])
     auth_array = pandas.DataFrame(AUTHENTICATION_ERRORS, columns=["Authentication Errors"])
 
-    filepath = "Test_CDP Switch Audit.xlsx"
+    filepath = f"{FolderPath}\\{SiteName}_CDP Switch Audit.xlsx"
     excel_template = "1 - CDP Switch Audit _ Template.xlsx"
     shutil.copy2(src=excel_template, dst=filepath)
 
     wb = openpyxl.load_workbook(filepath)
     ws1 = wb["Audit"]
-    ws1["B4"] = "Not Specified"     # Site Code
+    ws1["B4"] = SiteName            # Site Code
     ws1["B5"] = DATE_NOW            # Date
     ws1["B6"] = TIME_NOW            # Time
-    ws1["B7"] = HOST1               # Seed IP Address 1
-    ws1["B8"] = "Not Specified"     # Seed IP Address 2
+    ws1["B7"] = IPAddr1             # Seed IP Address 1
+    ws1["B8"] = IPAddr2             # Seed IP Address 2
     wb.save(filepath)
     wb.close()
 
