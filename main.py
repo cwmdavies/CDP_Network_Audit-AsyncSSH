@@ -72,6 +72,11 @@ def ip_check(ip) -> bool:
     try:
         ipaddress.ip_address(ip)
         return True
+    except ValueError:
+        log.error(
+            f"ip_check function ValueError: IP Address: {ip} is an invalid address. Please check and try again!",
+            exc_info=True)
+        return False
     except Exception as Err:
         log.error(f"An error occurred: {Err}",)
         return False
