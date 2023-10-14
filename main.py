@@ -57,7 +57,7 @@ credentials = {
     "known_hosts": None,
     "encryption_algs": encryption_algs_list,
     "kex_algs": kex_algs_list,
-    "connect_timeout": 4,
+    "connect_timeout": 5,
 }
 
 
