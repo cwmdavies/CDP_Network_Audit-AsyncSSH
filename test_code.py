@@ -5,23 +5,26 @@ import pandas as np
 import shutil
 import openpyxl
 import datetime
+from asyncstdlib.builtins import map as amap
+from asyncstdlib.builtins import tuple as atuple
+import socket
 
 DATE_TIME_NOW = datetime.datetime.now()
 DATE_NOW = DATE_TIME_NOW.strftime("%d %B %Y")
 TIME_NOW = DATE_TIME_NOW.strftime("%H:%M")
-hosts_queue = asyncio.Queue()
-hosts_queue.put_nowait("192.168.1.1")
-ip_addresses = []
-hostnames = []
-hosts = list()
-collection_of_results = []
+IP_LIST = ["192.168.1.2"]
+HOSTNAMES = []
+DNS_IP = {}
+CONNECTION_ERRORS = []
+AUTHENTICATION_ERRORS = []
+COLLECTION_OF_RESULTS = []
 
 encryption_algs_list = ["aes128-cbc", "3des-cbc", "aes192-cbc", "aes256-cbc", "aes256-ctr"]
 kex_algs_list = ["diffie-hellman-group-exchange-sha1", "diffie-hellman-group14-sha1", "diffie-hellman-group1-sha1"]
 
 credentials = {
-    "username": '',
-    "password": '',
+    "username": 'chris',
+    "password": '!Lepsodizle0!',
     "known_hosts": None,
     "encryption_algs": encryption_algs_list,
     "kex_algs": kex_algs_list,
@@ -34,8 +37,26 @@ async def run_client(host, command: str) -> asyncssh.SSHCompletedProcess:
         return await conn.run(command)
 
 
+def resolve_dns(domain_name) -> None:
+    """
+    Takes in a domain name and does a DNS lookup on it.
+    Saves the information to a dictionary
+    :param domain_name: Domain name. Example: google.com
+    :return: None. Saves IP Address and domain name to a dictionary. Example: {"google.com": "142.250.200.14"}
+    """
+    try:
+        print(f"Attempting to retrieve DNS 'A' record for hostname: {domain_name}")
+        addr1 = socket.gethostbyname(domain_name)
+        DNS_IP[domain_name] = addr1
+        print(f"Successfully retrieved DNS 'A' record for hostname: {domain_name}")
+    except socket.gaierror:
+        print(f"Failed to retrieve DNS A record for hostname: {domain_name}")
+        DNS_IP[domain_name] = "DNS Resolution Failed"
+    except Exception as Err:
+        print(f"An unknown error occurred for hostname: {domain_name}, {Err}")
+
+
 async def get_facts(host):
-    ip_addresses.append(host)
     print(f"Getting Version information for host: {host}")
     get_version = await run_client(host, 'show version')
 
@@ -49,8 +70,8 @@ async def get_facts(host):
     serial_numbers = get_version_output[0].get("SERIAL")
     uptime = get_version_output[0].get("UPTIME")
 
-    if hostname not in hostnames:
-        hostnames.append(hostname)
+    if hostname not in HOSTNAMES:
+        HOSTNAMES.append(hostname)
 
         print(f"Getting CDP Neighbor Details for host: {host}")
         get_cdp_neighbors = await run_client(host, 'show cdp neighbor detail')
@@ -67,27 +88,27 @@ async def get_facts(host):
             text = entry['DESTINATION_HOST']
             head, sep, tail = text.partition('.')
             entry['DESTINATION_HOST'] = head.upper()
-            collection_of_results.append(entry)
-            if entry["MANAGEMENT_IP"] not in ip_addresses:
+            COLLECTION_OF_RESULTS.append(entry)
+            if entry["MANAGEMENT_IP"] not in IP_LIST:
                 if 'Switch' in entry['CAPABILITIES'] and "Host" not in entry['CAPABILITIES']:
-                    hosts_queue.put_nowait(entry["MANAGEMENT_IP"])
+                    IP_LIST.append(entry["MANAGEMENT_IP"])
 
 
-async def run_multiple_clients() -> None:
-    while True:
-        if hosts_queue.empty():
-            break
+async def run_multi_thread(function, iterable):
+    thread_count = 5
+    i = 0
+    while i < len(iterable):
+        limit = i + min(thread_count, (len(iterable) - i))
+        ip_addresses = iterable[i:limit]
+        await atuple(amap(function, ip_addresses))
+        i = limit
 
-        for host in range(hosts_queue.qsize()):
-            hosts.append(hosts_queue.get_nowait())
 
-            print(hosts)
-            tasks = (get_facts(host) for host in hosts)
-            await asyncio.gather(*tasks)
-        hosts_queue.task_done()
-        hosts.clear()
+async def main() -> None:
+    await run_multi_thread(get_facts, IP_LIST)
+    await run_multi_thread(resolve_dns, HOSTNAMES)
 
-    array = np.DataFrame(collection_of_results, columns=["LOCAL_HOST",
+    array = np.DataFrame(COLLECTION_OF_RESULTS, columns=["LOCAL_HOST",
                                                          "LOCAL_IP",
                                                          "LOCAL_PORT",
                                                          "LOCAL_SERIAL",
@@ -99,6 +120,8 @@ async def run_multiple_clients() -> None:
                                                          "SOFTWARE_VERSION",
                                                          "CAPABILITIES"
                                                          ])
+    dns_array = np.DataFrame(DNS_IP.items(), columns=["Hostname", "IP Address"])
+
     filepath = 'CDP_Neighbors_Detail.xlsx'
     excel_template = f"config_files\\1 - CDP Network Audit _ Template.xlsx"
     shutil.copy2(src=excel_template, dst=filepath)
@@ -112,8 +135,8 @@ async def run_multiple_clients() -> None:
 
     writer = np.ExcelWriter(filepath, engine='openpyxl', if_sheet_exists="overlay", mode="a")
     array.to_excel(writer, index=False, sheet_name="Audit", header=False, startrow=11)
-
+    dns_array.to_excel(writer, index=False, sheet_name="DNS Resolved", header=False, startrow=4)
     writer.close()
 
 if __name__ == "__main__":
-    asyncio.get_event_loop().run_until_complete(run_multiple_clients())
+    asyncio.get_event_loop().run_until_complete(main())
