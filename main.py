@@ -1,25 +1,27 @@
-import ipaddress
-import shutil
-import socket
-import time
-import openpyxl as openpyxl
-import pandas as pandas
-import textfsm
-import datetime
-import sys
-import asyncssh
 import asyncio
+import asyncssh
+import textfsm
+import pandas as np
+import shutil
+import openpyxl
+import time
+import datetime
+import socket
+import multiprocessing
+import multiprocessing.pool
+import os
 import MyPackage.MyGui as MyGui
 from MyPackage import config_params
 import logging.config
+import sys
 
 MyGui.root.mainloop()
 SiteName = MyGui.my_gui.SiteName_var.get()
 jump_server = MyGui.my_gui.JumpServer_var.get()
-_USERNAME = MyGui.my_gui.Username_var.get()
-_PASSWORD = MyGui.my_gui.password_var.get()
+USERNAME = MyGui.my_gui.Username_var.get()
+PASSWORD = MyGui.my_gui.password_var.get()
 IPAddr1 = MyGui.my_gui.IP_Address1_var.get()
-
+IP_LIST = list()
 if MyGui.my_gui.IP_Address2_var.get():
     IPAddr2 = MyGui.my_gui.IP_Address2_var.get()
 else:
@@ -27,12 +29,15 @@ else:
 
 FolderPath = MyGui.my_gui.FolderPath_var.get()
 
-DNS_IP = {}
-AUTHENTICATION_ERRORS = []
-CONNECTION_ERRORS = []
 DATE_TIME_NOW = datetime.datetime.now()
 DATE_NOW = DATE_TIME_NOW.strftime("%d %B %Y")
 TIME_NOW = DATE_TIME_NOW.strftime("%H:%M")
+IPS_PROCESSED = list()
+HOSTNAMES = list()
+DNS_IP = {}
+CONNECTION_ERRORS = list()
+AUTHENTICATION_ERRORS = list()
+COLLECTION_OF_RESULTS = list()
 
 logging.config.fileConfig(fname='config_files/logging_configuration.conf',
                           disable_existing_loggers=False,
@@ -52,37 +57,29 @@ encryption_algs_list = ["aes128-cbc", "3des-cbc", "aes192-cbc", "aes256-cbc", "a
 kex_algs_list = ["diffie-hellman-group-exchange-sha1", "diffie-hellman-group14-sha1", "diffie-hellman-group1-sha1"]
 
 credentials = {
-    "username": _USERNAME,
-    "password": _PASSWORD,
+    "username": USERNAME,
+    "password": PASSWORD,
     "known_hosts": None,
     "encryption_algs": encryption_algs_list,
     "kex_algs": kex_algs_list,
-    "connect_timeout": 5,
+    "connect_timeout": 10,
 }
 
 
-def ip_check(ip) -> bool:
-    """
-    Takes in an IP Address as a string.
-    Checks that the IP address is a valid one.
-    Returns True or false.
-    :param ip: Example: 192.168.1.1
-    :return: Boolean
-    """
-    try:
-        ipaddress.ip_address(ip)
-        return True
-    except ValueError:
-        log.error(
-            f"ip_check function ValueError: IP Address: {ip} is an invalid address. Please check and try again!",
-            exc_info=True)
-        return False
-    except Exception as Err:
-        log.error(f"An error occurred: {Err}",)
-        return False
+async def direct_connection(host, command: str) -> asyncssh.SSHCompletedProcess:
+    log.info("Running Direct Connection Function")
+    async with asyncssh.connect(host, **credentials) as conn:
+        return await conn.run(command)
 
 
-async def dns_resolve(domain_name) -> str:
+async def tunnel_connection(host, command: str) -> asyncssh.SSHCompletedProcess:
+    log.info("Running Tunnel Connection Function")
+    async with asyncssh.connect(jump_server, **credentials) as tunnel:
+        async with asyncssh.connect(host, tunnel=tunnel, **credentials) as conn:
+            return await conn.run(command)
+
+
+def resolve_dns(domain_name) -> None:
     """
     Takes in a domain name and does a DNS lookup on it.
     Saves the information to a dictionary
@@ -92,30 +89,74 @@ async def dns_resolve(domain_name) -> str:
     try:
         log.info(f"Attempting to retrieve DNS 'A' record for hostname: {domain_name}")
         addr1 = socket.gethostbyname(domain_name)
+        DNS_IP[domain_name] = addr1
         log.info(f"Successfully retrieved DNS 'A' record for hostname: {domain_name}")
-        return addr1
     except socket.gaierror:
-        log.error(f"No DNS A record found for domain name: {domain_name}", exc_info=True)
-        return "No DNS A record found"
+        log.error(f"Failed to retrieve DNS A record for hostname: {domain_name}")
+        DNS_IP[domain_name] = "DNS Resolution Failed"
     except Exception as Err:
-        log.error(f"An unknown error occurred for hostname: {domain_name}, {Err}", exc_info=True)
-        return "DNS Resolution Failed"
+        log.error(f"An unknown error occurred for hostname: {domain_name}, {Err}")
 
 
-async def direct_client(host, command: str) -> asyncssh.SSHCompletedProcess:
-    log.info(f"Running Direct Client function")
-    async with asyncssh.connect(host, **credentials) as conn:
-        return await conn.run(command)
+async def get_facts(host):
+    log.info(f"Getting Version information for host: {host}")
+    if jump_server == "None":
+        get_version = await direct_connection(host, 'show version')
+    else:
+        get_version = await tunnel_connection(host, 'show version')
+    log.info(f"Version information retrieval successful for host: {host}")
+
+    # Parse Show Version Output
+    with open(f"textfsm/cisco_ios_show_version.textfsm") as f:
+        re_table = textfsm.TextFSM(f)
+        result = re_table.ParseText(get_version.stdout)
+    get_version_output = [dict(zip(re_table.header, entry)) for entry in result]
+
+    hostname = get_version_output[0].get("HOSTNAME")
+    serial_numbers = get_version_output[0].get("SERIAL")
+    uptime = get_version_output[0].get("UPTIME")
+
+    if hostname not in HOSTNAMES:
+        HOSTNAMES.append(hostname)
+
+        log.info(f"Getting CDP Neighbor Details for host: {host}")
+        if jump_server == "None":
+            get_cdp_neighbors = await direct_connection(host, 'show cdp neighbor detail')
+        else:
+            get_cdp_neighbors = await tunnel_connection(host, 'show cdp neighbor detail')
+        log.info(f"CDP Neighbor Details retrieval successful for host: {host}")
+        with open(f"textfsm/cisco_ios_show_cdp_neighbors_detail.textfsm") as f:
+            re_table = textfsm.TextFSM(f)
+            result = re_table.ParseText(get_cdp_neighbors.stdout)
+        get_cdp_neighbors_output = [dict(zip(re_table.header, entry)) for entry in result]
+
+        for entry in get_cdp_neighbors_output:
+            entry["LOCAL_HOST"] = hostname
+            entry["LOCAL_IP"] = host
+            entry["LOCAL_SERIAL"] = serial_numbers
+            entry["LOCAL_UPTIME"] = uptime
+            text = entry['DESTINATION_HOST']
+            head, sep, tail = text.partition('.')
+            entry['DESTINATION_HOST'] = head.upper()
+            COLLECTION_OF_RESULTS.append(entry)
+            if entry["MANAGEMENT_IP"] not in IP_LIST:
+                if 'Switch' in entry['CAPABILITIES'] and "Host" not in entry['CAPABILITIES']:
+                    IP_LIST.append(entry["MANAGEMENT_IP"])
+            IPS_PROCESSED.append(host)
 
 
-async def tunnel_client(host, command: str) -> asyncssh.SSHCompletedProcess:
-    log.info("Running Tunnel Client Function")
-    async with asyncssh.connect(jump_server, **credentials) as tunnel:
-        async with asyncssh.connect(host, tunnel=tunnel, **credentials) as conn:
-            return await conn.run(command)
+def run_multi_thread(function, iterable):
+    thread_count = os.cpu_count()
+    with multiprocessing.pool.ThreadPool(thread_count) as pool:
+        i = 0
+        while i < len(iterable):
+            limit = i + min(thread_count, (len(iterable) - i))
+            ip_addresses = iterable[i:limit]
+            pool.map(function, ip_addresses)
+            i = limit
 
 
-async def main():
+async def main() -> None:
     start = time.perf_counter()
     collection_of_results = []
     hostnames = []
@@ -124,117 +165,52 @@ async def main():
     if not IPAddr1:
         log.error("No IP Address specified, exiting script!")
         sys.exit()
-
-    queue = asyncio.Queue()
-    queue.put_nowait(IPAddr1)
+    IP_LIST.append(IPAddr1)
     if IPAddr2 is not None:
-        queue.put_nowait(IPAddr2)
+        IP_LIST.append(IPAddr2)
 
-    dns_queue = asyncio.Queue()
+    while len(IP_LIST) != 0:
+        for IP in IPS_PROCESSED:
+            if IP in IP_LIST:
+                IP_LIST.remove(IP)
+        get_facts_tasks = (get_facts(host) for host in IP_LIST)
+        await asyncio.gather(*get_facts_tasks)
 
-    while True:
-        if queue.empty():
-            break
+    run_multi_thread(resolve_dns, HOSTNAMES)
 
-        ip_address = queue.get_nowait()
-        ip_addresses.append(ip_address)
+    array = np.DataFrame(COLLECTION_OF_RESULTS, columns=["LOCAL_HOST",
+                                                         "LOCAL_IP",
+                                                         "LOCAL_PORT",
+                                                         "LOCAL_SERIAL",
+                                                         "LOCAL_UPTIME",
+                                                         "DESTINATION_HOST",
+                                                         "REMOTE_PORT",
+                                                         "MANAGEMENT_IP",
+                                                         "PLATFORM",
+                                                         "SOFTWARE_VERSION",
+                                                         "CAPABILITIES"
+                                                         ])
+    dns_array = np.DataFrame(DNS_IP.items(), columns=["Hostname", "IP Address"])
 
-        try:
-            log.info(f"Attempting to get Hostname for IP Address: {ip_address} ")
-            if jump_server == "None":
-                get_hostname = await direct_client(ip_address, "show run | inc hostname")
-            else:
-                get_hostname = await tunnel_client(ip_address, "show run | inc hostname")
-
-            log.info(f"Hostname for IP Address: {ip_address} successfully retrieved")
-            with open("textfsm/hostname.textfsm") as f:
-                re_table = textfsm.TextFSM(f)
-                result = re_table.ParseText(get_hostname.stdout)
-                hostname = result[0][0]
-
-            if hostname not in hostnames:
-                hostnames.append(hostname)
-
-                log.info(f"Attempting to get CDP information for IP Address: {ip_address}")
-
-                if jump_server == "None":
-                    output = await direct_client(ip_address, "show cdp neighbors detail")
-                else:
-                    output = await tunnel_client(ip_address, "show cdp neighbors detail")
-
-                with open("textfsm/cisco_ios_show_cdp_neighbors_detail.textfsm") as f:
-                    re_table = textfsm.TextFSM(f)
-                    result = re_table.ParseText(output.stdout)
-                result = [dict(zip(re_table.header, entry)) for entry in result]
-                for entry in result:
-                    entry['LOCAL_IP'] = ip_address
-                    entry['LOCAL_HOST'] = hostname.upper()
-                    text = entry['DESTINATION_HOST']
-                    head, sep, tail = text.partition('.')
-                    entry['DESTINATION_HOST'] = head.upper()
-                    collection_of_results.append(entry)
-                    if entry["MANAGEMENT_IP"] not in ip_addresses:
-                        if 'Switch' in entry['CAPABILITIES'] and "Host" not in entry['CAPABILITIES']:
-                            await queue.put(entry["MANAGEMENT_IP"])
-
-            queue.task_done()
-
-        except TimeoutError:
-            log.error(f"A Timeout error occurred for IP Address: {ip_address}!", exc_info=True)
-            CONNECTION_ERRORS.append(ip_address)
-        except asyncssh.misc.PermissionDenied:
-            log.error(f"Authentication Failed for IP Address: {ip_address}!", exc_info=True)
-            AUTHENTICATION_ERRORS.append(ip_address)
-        except Exception as Err:
-            log.error(f"An unknown error occurred: {Err}", exc_info=True)
-            CONNECTION_ERRORS.append(ip_address)
-
-    for i in hostnames:
-        await dns_queue.put(i)
-    while True:
-        if dns_queue.empty():
-            break
-        get_hostname_from_queue = dns_queue.get_nowait()
-        log.info(f"Attempting to resolve IP Address for hostname: {get_hostname_from_queue}")
-        host_ip_addr = await dns_resolve(get_hostname_from_queue)
-        DNS_IP[get_hostname_from_queue] = host_ip_addr
-        dns_queue.task_done()
-
-    audit_array = pandas.DataFrame(collection_of_results, columns=["LOCAL_HOST",
-                                                                   "LOCAL_IP",
-                                                                   "LOCAL_PORT",
-                                                                   "DESTINATION_HOST",
-                                                                   "REMOTE_PORT",
-                                                                   "MANAGEMENT_IP",
-                                                                   "PLATFORM",
-                                                                   "SOFTWARE_VERSION",
-                                                                   "CAPABILITIES"
-                                                                   ])
-    dns_array = pandas.DataFrame(DNS_IP.items(), columns=["Hostname", "IP Address"])
-    conn_array = pandas.DataFrame(CONNECTION_ERRORS, columns=["Connection Errors"])
-    auth_array = pandas.DataFrame(AUTHENTICATION_ERRORS, columns=["Authentication Errors"])
-
-    filepath = f"{FolderPath}\\{SiteName}_CDP Switch Audit.xlsx"
-    excel_template = "1 - CDP Switch Audit _ Template.xlsx"
+    filepath = f"{FolderPath}\\CDP_Neighbors_Detail.xlsx"
+    excel_template = f"config_files\\1 - CDP Network Audit _ Template.xlsx"
     shutil.copy2(src=excel_template, dst=filepath)
 
     wb = openpyxl.load_workbook(filepath)
     ws1 = wb["Audit"]
-    ws1["B4"] = SiteName            # Site Code
-    ws1["B5"] = DATE_NOW            # Date
-    ws1["B6"] = TIME_NOW            # Time
-    ws1["B7"] = IPAddr1             # Seed IP Address 1
-    ws1["B8"] = IPAddr2             # Seed IP Address 2
+    ws1["B4"] = SiteName
+    ws1["B5"] = DATE_NOW
+    ws1["B6"] = TIME_NOW
+    ws1["B7"] = IPAddr1
+    ws1["B8"] = IPAddr2 if IPAddr2 else "Not Specified"
     wb.save(filepath)
     wb.close()
 
-    writer = pandas.ExcelWriter(filepath, engine='openpyxl', if_sheet_exists="overlay", mode="a")
-    audit_array.to_excel(writer, index=False, sheet_name="Audit", header=False, startrow=11)
+    writer = np.ExcelWriter(filepath, engine='openpyxl', if_sheet_exists="overlay", mode="a")
+    array.to_excel(writer, index=False, sheet_name="Audit", header=False, startrow=11)
     dns_array.to_excel(writer, index=False, sheet_name="DNS Resolved", header=False, startrow=4)
-    conn_array.to_excel(writer, index=False, sheet_name="Connection Errors", header=False, startrow=4)
-    auth_array.to_excel(writer, index=False, sheet_name="Authentication Errors", header=False, startrow=4)
-
     writer.close()
+
     end = time.perf_counter()
     log.info(f"Script finished in {end - start:0.4f} seconds")
 
