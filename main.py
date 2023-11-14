@@ -1,3 +1,18 @@
+"""
+Author Details:
+Name: Chris Davies
+Email: chris.davies@weavermanor.co.uk
+Tested on Python 3.10
+
+This script takes in up to two IP Addresses, preferably the core switches, runs the "Show CDP Neighbors Detail"
+command and saves the information to a list of dictionaries. Each dictionary is then parsed for the neighbouring
+IP Address for each CDP neighbour and saved to a separate list. Another list is used to store the IP Addresses
+of those that have been processed so no switch is connected too more than once. A connection is made to each IP Address
+in the list , using asynchronous multithreading, to retrieve the same information. This recursion goes on until there
+are no more IP Addresses to connect to. The information is then converted to a numpy array and saved to an
+Excel spreadsheet.
+The script uses Asyncio/AsyncSSH to connect to multiple switches at a time and to run multiple commands asynchronously.
+"""
 import asyncio
 import asyncssh
 import textfsm
@@ -158,9 +173,6 @@ def run_multi_thread(function, iterable):
 
 async def main() -> None:
     start = time.perf_counter()
-    collection_of_results = []
-    hostnames = []
-    ip_addresses = []
 
     if not IPAddr1:
         log.error("No IP Address specified, exiting script!")
