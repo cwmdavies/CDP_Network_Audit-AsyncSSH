@@ -6,7 +6,6 @@ import shutil
 import openpyxl
 import datetime
 
-# A list to contain all the CDP Details for the collected hosts
 CDP_NEIGHBOUR_DETAILS = list()
 HOST = ""
 USERNAME = ""
