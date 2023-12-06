@@ -6,16 +6,12 @@ import shutil
 import openpyxl
 import datetime
 import argparse
+from getpass import getpass
 
 parser = argparse.ArgumentParser()
 parser.add_argument("-u", "--username", help="Username used to login to the device with.",
                     action="store",
                     dest="USERNAME",
-                    required=True,
-                    )
-parser.add_argument("-p", "--password", help="Username used to login to the device with.",
-                    action="store",
-                    dest="PASSWORD",
                     required=True,
                     )
 parser.add_argument("-a", "--ipaddress", help="Password used to login to the device with.",
@@ -26,11 +22,12 @@ parser.add_argument("-a", "--ipaddress", help="Password used to login to the dev
 parser.add_argument("-s", "--site_name", help="Site name used for the name of the Excel output file.",
                     action="store",
                     dest="SITE_NAME",
+                    required=True,
                     )
 
 args = parser.parse_args()
 USERNAME = args.USERNAME
-PASSWORD = args.PASSWORD
+PASSWORD = getpass("Enter your password: ")
 HOST = args.HOST
 SITE_NAME = args.SITE_NAME
 CDP_NEIGHBOUR_DETAILS = list()
@@ -124,8 +121,8 @@ def save_to_excel(details_list):
                                              "SOFTWARE_VERSION",
                                              "CAPABILITIES"
                                              ])
-    site_name = SITE_NAME + "_"
-    filepath = f"{site_name}CDP_Neighbors_Detail.xlsx"
+
+    filepath = f"{SITE_NAME}CDP_Neighbors_Detail.xlsx"
     excel_template = f"config_files\\1 - CDP Network Audit _ Template.xlsx"
     shutil.copy2(src=excel_template, dst=filepath)
 
