@@ -100,7 +100,7 @@ async def discover_network(host, username, password, visited):
     output2 = await run_command(host, username, password, "show version")
     # Parse the cdp output and get the neighbors
     neighbors = get_facts(output, output2, host)
-    # Recursively discover the neighbors
+    # Recursively discover the neighbours
     get_facts_tasks = (discover_network(host, username, password, visited) for host in neighbors)
     await asyncio.gather(*get_facts_tasks)
 
