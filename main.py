@@ -11,14 +11,17 @@ parser = argparse.ArgumentParser()
 parser.add_argument("-u", "--username", help="Username used to login to the device with.",
                     action="store",
                     dest="USERNAME",
+                    required=True,
                     )
 parser.add_argument("-p", "--password", help="Username used to login to the device with.",
                     action="store",
                     dest="PASSWORD",
+                    required=True,
                     )
 parser.add_argument("-a", "--ipaddress", help="Password used to login to the device with.",
                     action="store",
                     dest="HOST",
+                    required=True,
                     )
 parser.add_argument("-s", "--site_name", help="Site name used for the name of the Excel output file.",
                     action="store",
@@ -121,8 +124,8 @@ def save_to_excel(details_list):
                                              "SOFTWARE_VERSION",
                                              "CAPABILITIES"
                                              ])
-
-    filepath = "CDP_Neighbors_Detail.xlsx"
+    site_name = SITE_NAME + "_"
+    filepath = f"{site_name}CDP_Neighbors_Detail.xlsx"
     excel_template = f"config_files\\1 - CDP Network Audit _ Template.xlsx"
     shutil.copy2(src=excel_template, dst=filepath)
 
