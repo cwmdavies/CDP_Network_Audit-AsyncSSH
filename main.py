@@ -122,7 +122,7 @@ def save_to_excel(details_list):
                                              "CAPABILITIES"
                                              ])
 
-    filepath = f"{SITE_NAME}CDP_Neighbors_Detail.xlsx"
+    filepath = f"{SITE_NAME}_CDP_Neighbors_Detail.xlsx"
     excel_template = f"config_files\\1 - CDP Network Audit _ Template.xlsx"
     shutil.copy2(src=excel_template, dst=filepath)
 
