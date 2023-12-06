@@ -5,12 +5,32 @@ import textfsm
 import shutil
 import openpyxl
 import datetime
+import argparse
 
+parser = argparse.ArgumentParser()
+parser.add_argument("-u", "--username", help="Username used to login to the device with.",
+                    action="store",
+                    dest="USERNAME",
+                    )
+parser.add_argument("-p", "--password", help="Username used to login to the device with.",
+                    action="store",
+                    dest="PASSWORD",
+                    )
+parser.add_argument("-a", "--ipaddress", help="Password used to login to the device with.",
+                    action="store",
+                    dest="HOST",
+                    )
+parser.add_argument("-s", "--site_name", help="Site name used for the name of the Excel output file.",
+                    action="store",
+                    dest="SITE_NAME",
+                    )
+
+args = parser.parse_args()
+USERNAME = args.USERNAME
+PASSWORD = args.PASSWORD
+HOST = args.HOST
+SITE_NAME = args.SITE_NAME
 CDP_NEIGHBOUR_DETAILS = list()
-HOST = ""
-USERNAME = ""
-PASSWORD = ""
-SITE_NAME = "Home"
 DATE_TIME_NOW = datetime.datetime.now()
 DATE_NOW = DATE_TIME_NOW.strftime("%d %B %Y")
 TIME_NOW = DATE_TIME_NOW.strftime("%H:%M")
