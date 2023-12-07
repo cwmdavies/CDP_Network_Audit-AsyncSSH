@@ -34,57 +34,76 @@ CDP_NEIGHBOUR_DETAILS = list()
 DATE_TIME_NOW = datetime.datetime.now()
 DATE_NOW = DATE_TIME_NOW.strftime("%d %B %Y")
 TIME_NOW = DATE_TIME_NOW.strftime("%H:%M")
+jump_server = "10.251.6.31"
 
 encryption_algs_list = ["aes128-cbc", "3des-cbc", "aes192-cbc", "aes256-cbc", "aes256-ctr"]
 kex_algs_list = ["diffie-hellman-group-exchange-sha1", "diffie-hellman-group14-sha1", "diffie-hellman-group1-sha1"]
 
+credentials = {
+    "username": USERNAME,
+    "password": PASSWORD,
+    "known_hosts": None,
+    "encryption_algs": encryption_algs_list,
+    "kex_algs": kex_algs_list,
+    "connect_timeout": 10,
+}
+
 
 # A function to connect to a cisco switch and run a command
-async def run_command(host, username, password, command):
-    print(f"Connecting to host: {host}")
-    async with asyncssh.connect(host,
-                                username=username,
-                                password=password,
-                                encryption_algs=encryption_algs_list,
-                                kex_algs=kex_algs_list,
-                                known_hosts=None,
-                                connect_timeout=10
-                                ) as conn:
-        result = await conn.run(command, check=True)
-        return result.stdout
+async def run_command(host, authentication, command):
+    print(f"Trying the following command: {command}, on IP Address: {host}")
+    try:
+        async with asyncssh.connect(jump_server, **authentication) as tunnel:
+            async with asyncssh.connect(host, tunnel=tunnel, **authentication) as conn:
+                result = await conn.run(command, check=True)
+                return result.stdout
+    except asyncssh.misc.ChannelOpenError:
+        print(f"An error occurred when trying to connect to IP: {host}")
+        return
+    except TimeoutError:
+        print(f"An Timeout error occurred when trying to connect to IP: {host}")
+        return None
+    except asyncssh.misc.PermissionDenied:
+        print(f"An Authentication error occurred when trying to connect to IP: {host}")
+        return None
 
 
 # A function to parse the cdp output and return a list of neighbors
 def get_facts(output, output2, host):
     global CDP_NEIGHBOUR_DETAILS
     neighbors = []
-    with open(f"textfsm/cisco_ios_show_cdp_neighbors_detail.textfsm") as f:
-        re_table = textfsm.TextFSM(f)
-        result = re_table.ParseText(output)
-    get_cdp_neighbors_output = [dict(zip(re_table.header, entry)) for entry in result]
+    if output is None:
+        return None
+    try:
+        with open(f"textfsm/cisco_ios_show_cdp_neighbors_detail.textfsm") as f:
+            re_table = textfsm.TextFSM(f)
+            result = re_table.ParseText(output)
+        get_cdp_neighbors_output = [dict(zip(re_table.header, entry)) for entry in result]
 
-    # Parse Show Version Output
-    with open(f"textfsm/cisco_ios_show_version.textfsm") as f:
-        re_table = textfsm.TextFSM(f)
-        result2 = re_table.ParseText(output2)
-    get_version_output = [dict(zip(re_table.header, entry)) for entry in result2]
+        # Parse Show Version Output
+        with open(f"textfsm/cisco_ios_show_version.textfsm") as f:
+            re_table = textfsm.TextFSM(f)
+            result2 = re_table.ParseText(output2)
+        get_version_output = [dict(zip(re_table.header, entry)) for entry in result2]
 
-    hostname = get_version_output[0].get("HOSTNAME")
-    serial_numbers = get_version_output[0].get("SERIAL")
-    uptime = get_version_output[0].get("UPTIME")
+        hostname = get_version_output[0].get("HOSTNAME")
+        serial_numbers = get_version_output[0].get("SERIAL")
+        uptime = get_version_output[0].get("UPTIME")
 
-    for entry in get_cdp_neighbors_output:
-        entry["LOCAL_HOST"] = hostname
-        entry["LOCAL_IP"] = host
-        entry["LOCAL_SERIAL"] = serial_numbers
-        entry["LOCAL_UPTIME"] = uptime
-        text = entry['DESTINATION_HOST']
-        head, sep, tail = text.partition('.')
-        entry['DESTINATION_HOST'] = head.upper()
-        CDP_NEIGHBOUR_DETAILS.append(entry)
-        if 'Switch' in entry['CAPABILITIES'] and "Host" not in entry['CAPABILITIES']:
-            neighbors.append(entry["MANAGEMENT_IP"])
-    return neighbors
+        for entry in get_cdp_neighbors_output:
+            entry["LOCAL_HOST"] = hostname
+            entry["LOCAL_IP"] = host
+            entry["LOCAL_SERIAL"] = serial_numbers
+            entry["LOCAL_UPTIME"] = uptime
+            text = entry['DESTINATION_HOST']
+            head, sep, tail = text.partition('.')
+            entry['DESTINATION_HOST'] = head.upper()
+            CDP_NEIGHBOUR_DETAILS.append(entry)
+            if 'Switch' in entry['CAPABILITIES'] and "Host" not in entry['CAPABILITIES']:
+                neighbors.append(entry["MANAGEMENT_IP"])
+        return neighbors
+    except Exception as err:
+        print(f"An error occurred for host {host} : {err}")
 
 
 # A function to recursively discover all devices in the network using cdp
@@ -95,11 +114,11 @@ async def discover_network(host, username, password, visited):
     # Mark the host as visited
     visited.add(host)
     # Run the show cdp neighbour detail command on the host
-    output = await run_command(host, username, password, "show cdp neighbors detail")
+    output1 = await run_command(host, credentials,"show cdp neighbors detail")
     # Run the show version command on the host
-    output2 = await run_command(host, username, password, "show version")
+    output2 = await run_command(host, credentials,"show version")
     # Parse the cdp output and get the neighbors
-    neighbors = get_facts(output, output2, host)
+    neighbors = get_facts(output1, output2, host)
     # Recursively discover the neighbours
     get_facts_tasks = (discover_network(host, username, password, visited) for host in neighbors)
     await asyncio.gather(*get_facts_tasks)
