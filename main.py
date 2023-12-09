@@ -114,9 +114,9 @@ async def discover_network(host, username, password, visited):
     # Mark the host as visited
     visited.add(host)
     # Run the show cdp neighbour detail command on the host
-    output1 = await run_command(host, credentials,"show cdp neighbors detail")
+    output1 = await run_command(host, credentials, "show cdp neighbors detail")
     # Run the show version command on the host
-    output2 = await run_command(host, credentials,"show version")
+    output2 = await run_command(host, credentials, "show version")
     # Parse the cdp output and get the neighbors
     neighbors = get_facts(output1, output2, host)
     # Recursively discover the neighbours
@@ -124,7 +124,7 @@ async def discover_network(host, username, password, visited):
     await asyncio.gather(*get_facts_tasks)
 
 
-# A function to save the network information to excel
+# A function to save the information to excel
 def save_to_excel(details_list):
     global HOST
     # Create a dataframe from the network dictionary
