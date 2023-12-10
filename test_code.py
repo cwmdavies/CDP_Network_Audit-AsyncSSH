@@ -3,8 +3,8 @@ import asyncssh
 import textfsm
 
 
-class CiscoDevice(asyncssh.client.SSHClient):
-    def __init__(self, ipaddr, username, password):
+class SiteName(asyncssh.client.SSHClient):
+    def __init__(self, site_name, ipaddr, username, password):
         self.connection = None
         self.ipaddr = ipaddr
         self.hostname = None
@@ -12,6 +12,7 @@ class CiscoDevice(asyncssh.client.SSHClient):
         self.uptime = None
         self.username = username
         self.password = password
+        self.site_name = None
 
     async def connect(self):
         encryption_algs_list = ["aes128-cbc", "3des-cbc", "aes192-cbc", "aes256-cbc", "aes256-ctr"]
@@ -32,17 +33,17 @@ class CiscoDevice(asyncssh.client.SSHClient):
         with open(f"textfsm/cisco_ios_show_cdp_neighbors_detail.textfsm") as f:
             re_table = textfsm.TextFSM(f)
             output = re_table.ParseText(show_cdp_neighbours.stdout)
-        get_cdp_neighbors_parsed = [dict(zip(re_table.header, entry)) for entry in output]
+        self.site_name = [dict(zip(re_table.header, entry)) for entry in output]
 
-        get_cdp_neighbors_parsed[0]["LOCAL_IP"] = self.ipaddr
-        get_cdp_neighbors_parsed[0]["LOCAL_HOST"] = self.hostname
-        get_cdp_neighbors_parsed[0]["LOCAL_SERIAL"] = self.serial_numbers
-        get_cdp_neighbors_parsed[0]["LOCAL_UPTIME"] = self.uptime
-        dest_host = get_cdp_neighbors_parsed[0]['DESTINATION_HOST']
+        self.site_name[0]["LOCAL_IP"] = self.ipaddr
+        self.site_name[0]["LOCAL_HOST"] = self.hostname
+        self.site_name[0]["LOCAL_SERIAL"] = self.serial_numbers
+        self.site_name[0]["LOCAL_UPTIME"] = self.uptime
+        dest_host = self.site_name[0]['DESTINATION_HOST']
         head, sep, tail = dest_host.partition('.')
-        get_cdp_neighbors_parsed[0]['DESTINATION_HOST'] = head.upper()
+        self.site_name[0]['DESTINATION_HOST'] = head.upper()
 
-        return get_cdp_neighbors_parsed
+        return self.site_name[0]
 
     async def get_version(self):
         show_version = await self.connection.run('show version')
@@ -64,7 +65,7 @@ class CiscoDevice(asyncssh.client.SSHClient):
 
 # Usage
 async def main():
-    device = CiscoDevice('', '', '')
+    device = SiteName('Home', '192.168.1.1', 'chris', '!Lepsodizle0!')
 
     await device.connect()
     cdp_output = await device.get_cdp_neighbors()
