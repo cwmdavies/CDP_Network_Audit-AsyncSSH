@@ -4,7 +4,7 @@ import textfsm
 
 
 class SiteName(asyncssh.client.SSHClient):
-    def __init__(self, site_name, ipaddr, username, password):
+    def __init__(self, ipaddr, username, password):
         self.connection = None
         self.ipaddr = ipaddr
         self.hostname = None
