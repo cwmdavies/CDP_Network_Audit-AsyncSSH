@@ -13,6 +13,8 @@ class SiteName(asyncssh.client.SSHClient):
         self.username = username
         self.password = password
         self.site_name = None
+        self.site_cdp_info = None
+        self.site_version_info = None
 
     async def connect(self):
         encryption_algs_list = ["aes128-cbc", "3des-cbc", "aes192-cbc", "aes256-cbc", "aes256-ctr"]
@@ -33,30 +35,30 @@ class SiteName(asyncssh.client.SSHClient):
         with open(f"textfsm/cisco_ios_show_cdp_neighbors_detail.textfsm") as f:
             re_table = textfsm.TextFSM(f)
             output = re_table.ParseText(show_cdp_neighbours.stdout)
-        self.site_name = [dict(zip(re_table.header, entry)) for entry in output]
+        self.site_cdp_info = [dict(zip(re_table.header, entry)) for entry in output]
 
-        self.site_name[0]["LOCAL_IP"] = self.ipaddr
-        self.site_name[0]["LOCAL_HOST"] = self.hostname
-        self.site_name[0]["LOCAL_SERIAL"] = self.serial_numbers
-        self.site_name[0]["LOCAL_UPTIME"] = self.uptime
-        dest_host = self.site_name[0]['DESTINATION_HOST']
+        self.site_cdp_info[0]["LOCAL_IP"] = self.ipaddr
+        self.site_cdp_info[0]["LOCAL_HOST"] = self.hostname
+        self.site_cdp_info[0]["LOCAL_SERIAL"] = self.serial_numbers
+        self.site_cdp_info[0]["LOCAL_UPTIME"] = self.uptime
+        dest_host = self.site_cdp_info[0]['DESTINATION_HOST']
         head, sep, tail = dest_host.partition('.')
-        self.site_name[0]['DESTINATION_HOST'] = head.upper()
+        self.site_cdp_info[0]['DESTINATION_HOST'] = head.upper()
 
-        return self.site_name[0]
+        return self.site_cdp_info[0]
 
     async def get_version(self):
         show_version = await self.connection.run('show version')
         with open(f"textfsm/cisco_ios_show_version.textfsm") as f:
             re_table = textfsm.TextFSM(f)
             output = re_table.ParseText(show_version.stdout)
-        get_version_results_parsed = [dict(zip(re_table.header, entry)) for entry in output]
+        site_version_info = [dict(zip(re_table.header, entry)) for entry in output]
 
-        self.hostname = get_version_results_parsed[0].get("HOSTNAME")
-        self.serial_numbers = get_version_results_parsed[0].get("SERIAL")
-        self.uptime = get_version_results_parsed[0].get("UPTIME")
+        self.hostname = site_version_info[0].get("HOSTNAME")
+        self.serial_numbers = site_version_info[0].get("SERIAL")
+        self.uptime = site_version_info[0].get("UPTIME")
 
-        return get_version_results_parsed
+        return site_version_info[0]
 
     async def close(self):
         self.connection.close()
