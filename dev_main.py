@@ -73,7 +73,7 @@ class SiteName(asyncssh.client.SSHClient):
 
 # Usage
 async def main():
-    device = SiteName('', '', '', '')
+    device = SiteName('', '', '')
 
     await device.connect()
     get_facts = await device.get_facts()
