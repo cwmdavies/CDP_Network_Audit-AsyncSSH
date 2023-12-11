@@ -60,6 +60,12 @@ class SiteName(asyncssh.client.SSHClient):
 
         return site_version_info[0]
 
+    async def get_facts(self):
+        get_cdp_info = await self.get_cdp_neighbors()
+        get_version_info = await self.get_version()
+
+        return {**get_cdp_info, **get_version_info}
+
     async def close(self):
         self.connection.close()
         await self.connection.wait_closed()
@@ -70,15 +76,9 @@ async def main():
     device = SiteName('', '', '', '')
 
     await device.connect()
-    cdp_output = await device.get_cdp_neighbors()
-    await device.close()
+    get_facts = await device.get_facts()
 
-    await device.connect()
-    version_output = await device.get_version()
-    await device.close()
-
-    print(cdp_output)
-    print(version_output)
+    print(get_facts)
 
 
 asyncio.run(main())
