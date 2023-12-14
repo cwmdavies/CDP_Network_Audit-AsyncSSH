@@ -65,7 +65,7 @@ class SiteName(asyncssh.client.SSHClient):
 
 # Usage
 async def main():
-    device = SiteName('Home', '192.168.1.1', 'chris', '!Lepsodizle0!')
+    device = SiteName('', '', '', '')
 
     await device.connect()
     cdp_output = await device.get_cdp_neighbors()
