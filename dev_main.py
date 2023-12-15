@@ -4,46 +4,49 @@ import textfsm
 
 
 class SiteName(asyncssh.client.SSHClient):
-    def __init__(self, site_name, ipaddr, username, password):
-        self.connection = None
+    def __init__(self, site_name, ipaddr, username, password, jump_server=None):
+        self.site_name = None
         self.ipaddr = ipaddr
+        self.username = username
+        self.password = password
+        self.jump_server = jump_server
+        self.connection = None
         self.hostname = None
         self.serial_numbers = None
         self.uptime = None
-        self.username = username
-        self.password = password
-        self.site_name = None
+        self.encryption_algs_list = ["aes128-cbc", "3des-cbc", "aes192-cbc", "aes256-cbc", "aes256-ctr"]
+        self.kex_algs_list = ["diffie-hellman-group-exchange-sha1", "diffie-hellman-group14-sha1",
+                              "diffie-hellman-group1-sha1"]
 
     async def connect(self):
-        encryption_algs_list = ["aes128-cbc", "3des-cbc", "aes192-cbc", "aes256-cbc", "aes256-ctr"]
-        kex_algs_list = ["diffie-hellman-group-exchange-sha1", "diffie-hellman-group14-sha1",
-                         "diffie-hellman-group1-sha1"]
-        self.connection = await asyncssh.connect(
-            self.ipaddr,
-            username=self.username,
-            password=self.password,
-            known_hosts=None,
-            encryption_algs=encryption_algs_list,
-            kex_algs=kex_algs_list,
-            connect_timeout=10,
-        )
+        if self.jump_server is None:
+            self.connection = \
+                await asyncssh.connect(
+                    self.ipaddr,
+                    username=self.username,
+                    password=self.password,
+                    known_hosts=None,
+                    encryption_algs=self.encryption_algs_list,
+                    kex_algs=self.kex_algs_list,
+                    connect_timeout=10,
+                )
 
     async def get_cdp_neighbors(self):
         show_cdp_neighbours = await self.connection.run('show cdp neighbors detail')
         with open(f"textfsm/cisco_ios_show_cdp_neighbors_detail.textfsm") as f:
             re_table = textfsm.TextFSM(f)
             output = re_table.ParseText(show_cdp_neighbours.stdout)
-        self.site_name = [dict(zip(re_table.header, entry)) for entry in output]
+        self.get_cdp_nei_parsed = [dict(zip(re_table.header, entry)) for entry in output]
 
-        self.site_name[0]["LOCAL_IP"] = self.ipaddr
-        self.site_name[0]["LOCAL_HOST"] = self.hostname
-        self.site_name[0]["LOCAL_SERIAL"] = self.serial_numbers
-        self.site_name[0]["LOCAL_UPTIME"] = self.uptime
-        dest_host = self.site_name[0]['DESTINATION_HOST']
+        self.get_cdp_nei_parsed[0]["LOCAL_IP"] = self.ipaddr
+        self.get_cdp_nei_parsed[0]["LOCAL_HOST"] = self.hostname
+        self.get_cdp_nei_parsed[0]["LOCAL_SERIAL"] = self.serial_numbers
+        self.get_cdp_nei_parsed[0]["LOCAL_UPTIME"] = self.uptime
+        dest_host = self.get_cdp_nei_parsed[0]['DESTINATION_HOST']
         head, sep, tail = dest_host.partition('.')
-        self.site_name[0]['DESTINATION_HOST'] = head.upper()
+        self.get_cdp_nei_parsed[0]['DESTINATION_HOST'] = head.upper()
 
-        return self.site_name[0]
+        return self.get_cdp_nei_parsed[0]
 
     async def get_version(self):
         show_version = await self.connection.run('show version')
