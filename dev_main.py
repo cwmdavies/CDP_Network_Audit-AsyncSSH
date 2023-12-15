@@ -3,13 +3,12 @@ import asyncssh
 import textfsm
 
 
-class SiteName(asyncssh.client.SSHClient):
-    def __init__(self, site_name, ipaddr, username, password, jump_server=None):
+class Device(asyncssh.client.SSHClient):
+    def __init__(self, site_name, ipaddr, username, password):
         self.site_name = None
         self.ipaddr = ipaddr
         self.username = username
         self.password = password
-        self.jump_server = jump_server
         self.jump_connection = None
         self.connection = None
         self.hostname = None
@@ -19,30 +18,17 @@ class SiteName(asyncssh.client.SSHClient):
         self.kex_algs_list = ["diffie-hellman-group-exchange-sha1", "diffie-hellman-group14-sha1",
                               "diffie-hellman-group1-sha1"]
 
-    async def jump(self):
-        self.jump_connection = \
-                await asyncssh.connect(
-                    self.jump_server,
-                    username=self.username,
-                    password=self.password,
-                    known_hosts=None,
-                    encryption_algs=self.encryption_algs_list,
-                    kex_algs=self.kex_algs_list,
-                    connect_timeout=10,
-                )
-
     async def connect(self):
-        if self.jump_server is None:
-            self.connection = \
-                await asyncssh.connect(
-                    self.ipaddr,
-                    username=self.username,
-                    password=self.password,
-                    known_hosts=None,
-                    encryption_algs=self.encryption_algs_list,
-                    kex_algs=self.kex_algs_list,
-                    connect_timeout=10,
-                )
+        self.connection = \
+            await asyncssh.connect(
+                self.ipaddr,
+                username=self.username,
+                password=self.password,
+                known_hosts=None,
+                encryption_algs=self.encryption_algs_list,
+                kex_algs=self.kex_algs_list,
+                connect_timeout=10,
+            )
 
     async def get_cdp_neighbors(self):
         show_cdp_neighbours = await self.connection.run('show cdp neighbors detail')
@@ -81,7 +67,7 @@ class SiteName(asyncssh.client.SSHClient):
 
 # Usage
 async def main():
-    device = SiteName('', '', '', '')
+    device = Device('', '', '', '')
 
     await device.connect()
     cdp_output = await device.get_cdp_neighbors()
@@ -91,8 +77,8 @@ async def main():
     version_output = await device.get_version()
     await device.close()
 
-    print(cdp_output)
-    print(version_output)
+    merged = {**cdp_output, **version_output}
+    print(merged)
 
 
 asyncio.run(main())
