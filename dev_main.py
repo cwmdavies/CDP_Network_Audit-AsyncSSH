@@ -78,12 +78,12 @@ async def main():
     device = Device('', '', '', '')
 
     await device.connect()
-    cdp_output = await device.get_cdp_neighbors()
+    cdp_nei_info = await device.get_cdp_neighbors()
 
     await device.connect()
-    version_output = await device.get_device_info()
+    device_info = await device.get_device_info()
 
-    merged = {**cdp_output, **version_output}
+    merged = {**cdp_nei_info, **device_info}
     print(merged)
 
     if device:
