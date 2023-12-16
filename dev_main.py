@@ -5,7 +5,7 @@ import textfsm
 
 class Device(asyncssh.client.SSHClient):
     def __init__(self, site_name, ipaddr, username, password):
-        self.site_name = None
+        self.site_name = site_name
         self.ipaddr = ipaddr
         self.username = username
         self.password = password
@@ -15,7 +15,7 @@ class Device(asyncssh.client.SSHClient):
         self.serial_numbers = None
         self.uptime = None
         self.cdp_neighbour_information = None
-        self.version_information = None
+        self.device_information = None
         self.encryption_algs_list = ["aes128-cbc", "3des-cbc", "aes192-cbc", "aes256-cbc", "aes256-ctr"]
         self.kex_algs_list = ["diffie-hellman-group-exchange-sha1", "diffie-hellman-group14-sha1",
                               "diffie-hellman-group1-sha1"]
@@ -50,22 +50,22 @@ class Device(asyncssh.client.SSHClient):
 
         return self.cdp_neighbour_information[0]
 
-    async def get_version(self):
+    async def get_device_info(self):
         show_version = await self.connection.run('show version')
         with open(f"textfsm/cisco_ios_show_version.textfsm") as f:
             re_table = textfsm.TextFSM(f)
             output = re_table.ParseText(show_version.stdout)
-        self.version_information = [dict(zip(re_table.header, entry)) for entry in output]
+        self.device_information = [dict(zip(re_table.header, entry)) for entry in output]
 
-        self.hostname = self.version_information[0].get("HOSTNAME")
-        self.serial_numbers = self.version_information[0].get("SERIAL")
-        self.uptime = self.version_information[0].get("UPTIME")
+        self.hostname = self.device_information[0].get("HOSTNAME")
+        self.serial_numbers = self.device_information[0].get("SERIAL")
+        self.uptime = self.device_information[0].get("UPTIME")
         await self.close()
 
-        return self.version_information[0]
+        return self.device_information[0]
 
     def get_info(self, string):
-        device_information = {**self.cdp_neighbour_information[0], **self.version_information[0]}
+        device_information = {**self.cdp_neighbour_information[0], **self.device_information[0]}
         return device_information[string]
 
     async def close(self):
@@ -81,14 +81,13 @@ async def main():
     cdp_output = await device.get_cdp_neighbors()
 
     await device.connect()
-    version_output = await device.get_version()
+    version_output = await device.get_device_info()
 
     merged = {**cdp_output, **version_output}
     print(merged)
-    print(device.get_info("MANAGEMENT_IP"))
 
     if device:
-        print("")
+        print(device.hostname)
 
 
 asyncio.run(main())
