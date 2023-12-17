@@ -32,25 +32,29 @@ class Device(asyncssh.client.SSHClient):
                 connect_timeout=10,
             )
 
+    async def initialise(self):
+        print("Initialising Device, Please Wait!")
+        await self.get_cdp_neighbors()
+        await self.get_device_info()
+
     async def get_cdp_neighbors(self):
+        await self.connect()
         show_cdp_neighbours = await self.connection.run('show cdp neighbors detail')
         with open(f"textfsm/cisco_ios_show_cdp_neighbors_detail.textfsm") as f:
             re_table = textfsm.TextFSM(f)
             output = re_table.ParseText(show_cdp_neighbours.stdout)
         self.cdp_neighbour_information = [dict(zip(re_table.header, entry)) for entry in output]
 
-        self.cdp_neighbour_information[0]["LOCAL_IP"] = self.ipaddr
-        self.cdp_neighbour_information[0]["LOCAL_HOST"] = self.hostname
-        self.cdp_neighbour_information[0]["LOCAL_SERIAL"] = self.serial_numbers
-        self.cdp_neighbour_information[0]["LOCAL_UPTIME"] = self.uptime
-        dest_host = self.cdp_neighbour_information[0]['DESTINATION_HOST']
-        head, sep, tail = dest_host.partition('.')
-        self.cdp_neighbour_information[0]['DESTINATION_HOST'] = head.upper()
+        for entry in self.cdp_neighbour_information:
+            text = entry['DESTINATION_HOST']
+            head, sep, tail = text.partition('.')
+            entry['DESTINATION_HOST'] = head.upper()
         await self.close()
 
         return self.cdp_neighbour_information[0]
 
     async def get_device_info(self):
+        await self.connect()
         show_version = await self.connection.run('show version')
         with open(f"textfsm/cisco_ios_show_version.textfsm") as f:
             re_table = textfsm.TextFSM(f)
@@ -64,10 +68,6 @@ class Device(asyncssh.client.SSHClient):
 
         return self.device_information[0]
 
-    def get_info(self, string):
-        device_information = {**self.cdp_neighbour_information[0], **self.device_information[0]}
-        return device_information[string]
-
     async def close(self):
         self.connection.close()
         await self.connection.wait_closed()
@@ -77,10 +77,7 @@ class Device(asyncssh.client.SSHClient):
 async def main():
     device = Device('', '', '', '')
 
-    await device.connect()
     cdp_nei_info = await device.get_cdp_neighbors()
-
-    await device.connect()
     device_info = await device.get_device_info()
 
     merged = {**cdp_nei_info, **device_info}
