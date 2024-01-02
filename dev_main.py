@@ -32,15 +32,15 @@ class Device(asyncssh.client.SSHClient):
                 connect_timeout=10,
             )
 
-    async def initialise(self):
-        print("Initialising Device, Please Wait!")
+    async def interrogate(self):
+        print("interrogating Device, Please Wait!")
         await self.get_cdp_neighbors()
         await self.get_device_info()
 
     async def get_cdp_neighbors(self):
         await self.connect()
         show_cdp_neighbours = await self.connection.run('show cdp neighbors detail')
-        with open(f"textfsm/cisco_ios_show_cdp_neighbors_detail.textfsm") as f:
+        with open(f"ProgramFiles/textfsm/cisco_ios_show_cdp_neighbors_detail.textfsm") as f:
             re_table = textfsm.TextFSM(f)
             output = re_table.ParseText(show_cdp_neighbours.stdout)
         self.cdp_neighbour_information = [dict(zip(re_table.header, entry)) for entry in output]
@@ -56,7 +56,7 @@ class Device(asyncssh.client.SSHClient):
     async def get_device_info(self):
         await self.connect()
         show_version = await self.connection.run('show version')
-        with open(f"textfsm/cisco_ios_show_version.textfsm") as f:
+        with open(f"ProgramFiles/textfsm/cisco_ios_show_version.textfsm") as f:
             re_table = textfsm.TextFSM(f)
             output = re_table.ParseText(show_version.stdout)
         self.device_information = [dict(zip(re_table.header, entry)) for entry in output]
@@ -75,16 +75,12 @@ class Device(asyncssh.client.SSHClient):
 
 # Usage
 async def main():
-    device = Device('', '', '', '')
+    seed_device = Device('Home', '192.168.1.2', 'chris', '!Lepsodizle0!')
 
-    cdp_nei_info = await device.get_cdp_neighbors()
-    device_info = await device.get_device_info()
+    await seed_device.interrogate()
 
-    merged = {**cdp_nei_info, **device_info}
-    print(merged)
-
-    if device:
-        print(device.hostname)
+    if seed_device:
+        print(seed_device.hostname)
 
 
 asyncio.run(main())

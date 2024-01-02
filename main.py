@@ -75,13 +75,13 @@ def get_facts(output, output2, host):
     if output is None:
         return None
     try:
-        with open(f"textfsm/cisco_ios_show_cdp_neighbors_detail.textfsm") as f:
+        with open(f"ProgramFiles/textfsm/cisco_ios_show_cdp_neighbors_detail.textfsm") as f:
             re_table = textfsm.TextFSM(f)
             result = re_table.ParseText(output)
         get_cdp_neighbors_output = [dict(zip(re_table.header, entry)) for entry in result]
 
         # Parse Show Version Output
-        with open(f"textfsm/cisco_ios_show_version.textfsm") as f:
+        with open(f"ProgramFiles/textfsm/cisco_ios_show_version.textfsm") as f:
             re_table = textfsm.TextFSM(f)
             result2 = re_table.ParseText(output2)
         get_version_output = [dict(zip(re_table.header, entry)) for entry in result2]

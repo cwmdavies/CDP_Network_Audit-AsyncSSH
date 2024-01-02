@@ -2,7 +2,7 @@ from tkinter import Tk, ttk, Label, Button, Entry, StringVar, filedialog
 from tkinter.messagebox import showinfo, showerror
 import sys
 import ipaddress
-from MyPackage import config_params
+from ProgramFiles import config_params
 
 
 JUMP_SERVER_KEYS = list(config_params.Jump_Servers.keys())
