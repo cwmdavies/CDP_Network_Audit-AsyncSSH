@@ -34,6 +34,8 @@ CDP_NEIGHBOUR_DETAILS = list()
 DATE_TIME_NOW = datetime.datetime.now()
 DATE_NOW = DATE_TIME_NOW.strftime("%d %B %Y")
 TIME_NOW = DATE_TIME_NOW.strftime("%H:%M")
+NEIGHBOURS = list()
+
 jump_server = "10.251.6.31"
 
 encryption_algs_list = ["aes128-cbc", "3des-cbc", "aes192-cbc", "aes256-cbc", "aes256-ctr"]
@@ -59,7 +61,7 @@ async def run_command(host, authentication, command):
                 return result.stdout
     except asyncssh.misc.ChannelOpenError:
         print(f"An error occurred when trying to connect to IP: {host}")
-        return
+        return None
     except TimeoutError:
         print(f"An Timeout error occurred when trying to connect to IP: {host}")
         return None
@@ -71,7 +73,7 @@ async def run_command(host, authentication, command):
 # A function to parse the cdp output and return a list of neighbors
 def get_facts(output, output2, host):
     global CDP_NEIGHBOUR_DETAILS
-    neighbors = []
+    global NEIGHBOURS
     if output is None:
         return None
     try:
@@ -100,8 +102,8 @@ def get_facts(output, output2, host):
             entry['DESTINATION_HOST'] = head.upper()
             CDP_NEIGHBOUR_DETAILS.append(entry)
             if 'Switch' in entry['CAPABILITIES'] and "Host" not in entry['CAPABILITIES']:
-                neighbors.append(entry["MANAGEMENT_IP"])
-        return neighbors
+                NEIGHBOURS.append(entry["MANAGEMENT_IP"])
+        return NEIGHBOURS
     except Exception as err:
         print(f"An error occurred for host {host} : {err}")
 
@@ -120,8 +122,10 @@ async def discover_network(host, username, password, visited):
     # Parse the cdp output and get the neighbors
     neighbors = get_facts(output1, output2, host)
     # Recursively discover the neighbours
-    get_facts_tasks = (discover_network(host, username, password, visited) for host in neighbors)
-    await asyncio.gather(*get_facts_tasks)
+    if NEIGHBOURS:
+        if len(NEIGHBOURS) != 0:
+            get_facts_tasks = (discover_network(host, username, password, visited) for host in neighbors)
+            await asyncio.gather(*get_facts_tasks)
 
 
 # A function to save the information to excel
@@ -142,7 +146,7 @@ def save_to_excel(details_list):
                                              ])
 
     filepath = f"{SITE_NAME}_CDP_Neighbors_Detail.xlsx"
-    excel_template = f"config_files\\1 - CDP Network Audit _ Template.xlsx"
+    excel_template = f"ProgramFiles\\config_files\\1 - CDP Network Audit _ Template.xlsx"
     shutil.copy2(src=excel_template, dst=filepath)
 
     wb = openpyxl.load_workbook(filepath)

@@ -3,9 +3,8 @@ import asyncssh
 import textfsm
 
 
-class Device(asyncssh.client.SSHClient):
-    def __init__(self, site_name, ipaddr, username, password):
-        self.site_name = site_name
+class Device:
+    def __init__(self, ipaddr, username, password):
         self.ipaddr = ipaddr
         self.username = username
         self.password = password
@@ -32,10 +31,11 @@ class Device(asyncssh.client.SSHClient):
                 connect_timeout=10,
             )
 
-    async def interrogate(self):
-        print("interrogating Device, Please Wait!")
-        await self.get_cdp_neighbors()
+    async def initialise(self):
+        print("Initialising Device, Please Wait!")
+        print(" ")
         await self.get_device_info()
+        await self.get_cdp_neighbors()
 
     async def get_cdp_neighbors(self):
         await self.connect()
@@ -49,6 +49,10 @@ class Device(asyncssh.client.SSHClient):
             text = entry['DESTINATION_HOST']
             head, sep, tail = text.partition('.')
             entry['DESTINATION_HOST'] = head.upper()
+            entry['LOCAL_HOST'] = self.hostname
+            entry['LOCAL_IP'] = self.ipaddr
+            entry['LOCAL_SERIAL'] = self.serial_numbers
+            entry['LOCAL_UPTIME'] = self.uptime
         await self.close()
 
         return self.cdp_neighbour_information[0]
@@ -65,22 +69,34 @@ class Device(asyncssh.client.SSHClient):
         self.serial_numbers = self.device_information[0].get("SERIAL")
         self.uptime = self.device_information[0].get("UPTIME")
         await self.close()
-
         return self.device_information[0]
+
+    async def recursive_discovery(self):
+        discovered_neighbours = dict()
+
+        for neighbour in self.cdp_neighbour_information:
+            discovered_neighbours[neighbour["DESTINATION_HOST"]] = neighbour["MANAGEMENT_IP"]
+
+        discover_neighbours = (Device(host, self.username, self.password)
+                               for host in discovered_neighbours.keys())
+
+        await asyncio.gather(*discover_neighbours)
+        return discovered_neighbours
 
     async def close(self):
         self.connection.close()
         await self.connection.wait_closed()
 
 
-# Usage
 async def main():
-    seed_device = Device('Home', '192.168.1.2', 'chris', '!Lepsodizle0!')
+    seed_device = Device('', '', '')
 
-    await seed_device.interrogate()
+    await seed_device.initialise()
+    discovered_neighbours = await seed_device.recursive_discovery()
 
-    if seed_device:
-        print(seed_device.hostname)
+    for entry in discovered_neighbours:
+        entry.initialise()
+        print(entry.hostname)
 
 
 asyncio.run(main())
