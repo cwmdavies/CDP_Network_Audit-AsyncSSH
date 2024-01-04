@@ -35,6 +35,7 @@ DATE_TIME_NOW = datetime.datetime.now()
 DATE_NOW = DATE_TIME_NOW.strftime("%d %B %Y")
 TIME_NOW = DATE_TIME_NOW.strftime("%H:%M")
 NEIGHBOURS = list()
+HOSTNAMES = list()
 
 jump_server = "10.251.6.31"
 
@@ -50,9 +51,19 @@ credentials = {
     "connect_timeout": 10,
 }
 
+alt_credentials = {
+    "username": "answer",
+    "password": "DontP4n!c",
+    "known_hosts": None,
+    "encryption_algs": encryption_algs_list,
+    "kex_algs": kex_algs_list,
+    "connect_timeout": 10,
+}
+
 
 # A function to connect to a cisco switch and run a command
 async def run_command(host, authentication, command):
+    attempts = 0
     print(f"Trying the following command: {command}, on IP Address: {host}")
     try:
         async with asyncssh.connect(jump_server, **authentication) as tunnel:
@@ -67,13 +78,19 @@ async def run_command(host, authentication, command):
         return None
     except asyncssh.misc.PermissionDenied:
         print(f"An Authentication error occurred when trying to connect to IP: {host}")
-        return None
+        print(f"Retrying again with different credentials...")
+        async with asyncssh.connect(jump_server, **authentication) as tunnel:
+            async with asyncssh.connect(host, tunnel=tunnel, **alt_credentials) as conn:
+                result = await conn.run(command, check=True)
+                return result.stdout
 
 
 # A function to parse the cdp output and return a list of neighbors
 def get_facts(output, output2, host):
     global CDP_NEIGHBOUR_DETAILS
     global NEIGHBOURS
+    global HOSTNAMES
+
     if output is None:
         return None
     try:
@@ -92,17 +109,19 @@ def get_facts(output, output2, host):
         serial_numbers = get_version_output[0].get("SERIAL")
         uptime = get_version_output[0].get("UPTIME")
 
-        for entry in get_cdp_neighbors_output:
-            entry["LOCAL_HOST"] = hostname
-            entry["LOCAL_IP"] = host
-            entry["LOCAL_SERIAL"] = serial_numbers
-            entry["LOCAL_UPTIME"] = uptime
-            text = entry['DESTINATION_HOST']
-            head, sep, tail = text.partition('.')
-            entry['DESTINATION_HOST'] = head.upper()
-            CDP_NEIGHBOUR_DETAILS.append(entry)
-            if 'Switch' in entry['CAPABILITIES'] and "Host" not in entry['CAPABILITIES']:
-                NEIGHBOURS.append(entry["MANAGEMENT_IP"])
+        if hostname not in HOSTNAMES:
+            HOSTNAMES.append(hostname)
+            for entry in get_cdp_neighbors_output:
+                entry["LOCAL_HOST"] = hostname
+                entry["LOCAL_IP"] = host
+                entry["LOCAL_SERIAL"] = serial_numbers
+                entry["LOCAL_UPTIME"] = uptime
+                text = entry['DESTINATION_HOST']
+                head, sep, tail = text.partition('.')
+                entry['DESTINATION_HOST'] = head.upper()
+                CDP_NEIGHBOUR_DETAILS.append(entry)
+                if 'Switch' in entry['CAPABILITIES'] and "Host" not in entry['CAPABILITIES']:
+                    NEIGHBOURS.append(entry["MANAGEMENT_IP"])
         return NEIGHBOURS
     except Exception as err:
         print(f"An error occurred for host {host} : {err}")
@@ -122,10 +141,11 @@ async def discover_network(host, username, password, visited):
     # Parse the cdp output and get the neighbors
     neighbors = get_facts(output1, output2, host)
     # Recursively discover the neighbours
-    if NEIGHBOURS:
-        if len(NEIGHBOURS) != 0:
-            get_facts_tasks = (discover_network(host, username, password, visited) for host in neighbors)
-            await asyncio.gather(*get_facts_tasks)
+    try:
+        get_facts_tasks = (discover_network(host, username, password, visited) for host in neighbors)
+        await asyncio.gather(*get_facts_tasks)
+    except Exception as err:
+        print(f"An error occurred for host {host} : {err}")
 
 
 # A function to save the information to excel
