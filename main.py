@@ -63,7 +63,6 @@ alt_credentials = {
 
 # A function to connect to a cisco switch and run a command
 async def run_command(host, authentication, command):
-    attempts = 0
     print(f"Trying the following command: {command}, on IP Address: {host}")
     try:
         async with asyncssh.connect(jump_server, **authentication) as tunnel:
