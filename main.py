@@ -36,6 +36,7 @@ DATE_NOW = DATE_TIME_NOW.strftime("%d %B %Y")
 TIME_NOW = DATE_TIME_NOW.strftime("%H:%M")
 NEIGHBOURS = list()
 HOSTNAMES = list()
+AUTH_ERRORS = list()
 
 jump_server = "10.251.6.31"
 
@@ -52,8 +53,8 @@ credentials = {
 }
 
 alt_credentials = {
-    "username": "answer",
-    "password": "DontP4n!c",
+    "username": "",
+    "password": "",
     "known_hosts": None,
     "encryption_algs": encryption_algs_list,
     "kex_algs": kex_algs_list,
@@ -65,7 +66,7 @@ alt_credentials = {
 async def run_command(host, authentication, command):
     print(f"Trying the following command: {command}, on IP Address: {host}")
     try:
-        async with asyncssh.connect(jump_server, **authentication) as tunnel:
+        async with asyncssh.connect(jump_server, **credentials) as tunnel:
             async with asyncssh.connect(host, tunnel=tunnel, **authentication) as conn:
                 result = await conn.run(command, check=True)
                 return result.stdout
@@ -77,11 +78,8 @@ async def run_command(host, authentication, command):
         return None
     except asyncssh.misc.PermissionDenied:
         print(f"An Authentication error occurred when trying to connect to IP: {host}")
-        print(f"Retrying again with different credentials...")
-        async with asyncssh.connect(jump_server, **authentication) as tunnel:
-            async with asyncssh.connect(host, tunnel=tunnel, **alt_credentials) as conn:
-                result = await conn.run(command, check=True)
-                return result.stdout
+        AUTH_ERRORS.append(host)
+        return None
 
 
 # A function to parse the cdp output and return a list of neighbors
