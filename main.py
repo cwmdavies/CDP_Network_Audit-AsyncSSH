@@ -42,16 +42,20 @@ HOSTNAMES = list()
 
 jump_server = ""
 
-encryption_algs_list = ["aes128-cbc",
-                        "3des-cbc",
-                        "aes192-cbc",
-                        "aes256-cbc", "aes256-ctr"]
+encryption_algs_list = [
+    "aes128-cbc",
+    "3des-cbc",
+    "aes192-cbc",
+    "aes256-cbc",
+    "aes256-ctr"
+]
 
-kex_algs_list = ["diffie-hellman-group-exchange-sha1",
-                 "diffie-hellman-group14-sha1",
-                 "diffie-hellman-group1-sha1",
-                 "diffie-hellman-group-exchange-sha256",
-                 ]
+kex_algs_list = [
+    "diffie-hellman-group-exchange-sha1",
+    "diffie-hellman-group14-sha1",
+    "diffie-hellman-group1-sha1",
+    "diffie-hellman-group-exchange-sha256",
+]
 
 default_credentials = {
     "username": USERNAME,
