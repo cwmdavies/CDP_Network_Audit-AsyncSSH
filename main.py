@@ -36,14 +36,13 @@ DATE_NOW = DATE_TIME_NOW.strftime("%d %B %Y")
 TIME_NOW = DATE_TIME_NOW.strftime("%H:%M")
 NEIGHBOURS = list()
 HOSTNAMES = list()
-AUTH_ERRORS = list()
 
 jump_server = "10.251.6.31"
 
 encryption_algs_list = ["aes128-cbc", "3des-cbc", "aes192-cbc", "aes256-cbc", "aes256-ctr"]
 kex_algs_list = ["diffie-hellman-group-exchange-sha1", "diffie-hellman-group14-sha1", "diffie-hellman-group1-sha1"]
 
-credentials = {
+default_credentials = {
     "username": USERNAME,
     "password": PASSWORD,
     "known_hosts": None,
@@ -52,22 +51,13 @@ credentials = {
     "connect_timeout": 10,
 }
 
-alt_credentials = {
-    "username": "",
-    "password": "",
-    "known_hosts": None,
-    "encryption_algs": encryption_algs_list,
-    "kex_algs": kex_algs_list,
-    "connect_timeout": 10,
-}
-
 
 # A function to connect to a cisco switch and run a command
-async def run_command(host, authentication, command):
+async def run_command(host, command):
     print(f"Trying the following command: {command}, on IP Address: {host}")
     try:
-        async with asyncssh.connect(jump_server, **credentials) as tunnel:
-            async with asyncssh.connect(host, tunnel=tunnel, **authentication) as conn:
+        async with asyncssh.connect(jump_server, **default_credentials) as tunnel:
+            async with asyncssh.connect(host, tunnel=tunnel, **default_credentials) as conn:
                 result = await conn.run(command, check=True)
                 return result.stdout
     except asyncssh.misc.ChannelOpenError:
@@ -78,7 +68,6 @@ async def run_command(host, authentication, command):
         return None
     except asyncssh.misc.PermissionDenied:
         print(f"An Authentication error occurred when trying to connect to IP: {host}")
-        AUTH_ERRORS.append(host)
         return None
 
 
@@ -132,9 +121,9 @@ async def discover_network(host, username, password, visited):
     # Mark the host as visited
     visited.add(host)
     # Run the show cdp neighbour detail command on the host
-    output1 = await run_command(host, credentials, "show cdp neighbors detail")
+    output1 = await run_command(host, "show cdp neighbors detail")
     # Run the show version command on the host
-    output2 = await run_command(host, credentials, "show version")
+    output2 = await run_command(host, "show version")
     # Parse the cdp output and get the neighbors
     neighbors = get_facts(output1, output2, host)
     # Recursively discover the neighbours
