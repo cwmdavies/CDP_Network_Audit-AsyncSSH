@@ -37,7 +37,7 @@ TIME_NOW = DATE_TIME_NOW.strftime("%H:%M")
 NEIGHBOURS = list()
 HOSTNAMES = list()
 
-jump_server = "10.251.6.31"
+jump_server = ""
 
 encryption_algs_list = ["aes128-cbc", "3des-cbc", "aes192-cbc", "aes256-cbc", "aes256-ctr"]
 kex_algs_list = ["diffie-hellman-group-exchange-sha1", "diffie-hellman-group14-sha1", "diffie-hellman-group1-sha1"]
