@@ -8,6 +8,9 @@ import datetime
 import argparse
 from getpass import getpass
 
+HOST_QUEUE = asyncio.Queue()
+LIMIT = 5
+
 parser = argparse.ArgumentParser()
 parser.add_argument("-u", "--username", help="Username used to login to the device with.",
                     action="store",
@@ -76,6 +79,7 @@ def get_facts(output, output2, host):
     global CDP_NEIGHBOUR_DETAILS
     global NEIGHBOURS
     global HOSTNAMES
+    global HOST_QUEUE
 
     if output is None:
         return None
@@ -107,14 +111,16 @@ def get_facts(output, output2, host):
                 entry['DESTINATION_HOST'] = head.upper()
                 CDP_NEIGHBOUR_DETAILS.append(entry)
                 if 'Switch' in entry['CAPABILITIES'] and "Host" not in entry['CAPABILITIES']:
-                    NEIGHBOURS.append(entry["MANAGEMENT_IP"])
-        return NEIGHBOURS
+                    HOST_QUEUE.put_nowait(entry["MANAGEMENT_IP"])
     except Exception as err:
         print(f"An error occurred for host {host} : {err}")
 
 
 # A function to recursively discover all devices in the network using cdp
 async def discover_network(host, username, password, visited):
+    global HOST_QUEUE
+
+    HOST_QUEUE.put_nowait(host)
     # Check if the host is already visited
     if host in visited:
         return
@@ -125,10 +131,15 @@ async def discover_network(host, username, password, visited):
     # Run the show version command on the host
     output2 = await run_command(host, "show version")
     # Parse the cdp output and get the neighbors
-    neighbors = get_facts(output1, output2, host)
+    get_facts(output1, output2, host)
+    hosts_list = list()
     # Recursively discover the neighbours
     try:
-        get_facts_tasks = (discover_network(host, username, password, visited) for host in neighbors)
+        for i in range(LIMIT):
+            if HOST_QUEUE.empty():
+                break
+            hosts_list.append(HOST_QUEUE.get_nowait())
+        get_facts_tasks = (discover_network(host, username, password, visited) for host in hosts_list)
         await asyncio.gather(*get_facts_tasks)
     except Exception as err:
         print(f"An error occurred for host {host} : {err}")
@@ -176,6 +187,7 @@ async def main():
     global HOST
     global USERNAME
     global PASSWORD
+
     # A set to keep track of visited hosts
     visited = set()
     # Discover the network using cdp
