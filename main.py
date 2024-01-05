@@ -120,6 +120,7 @@ def get_facts(output, output2, host):
 async def discover_network(host, username, password, visited):
     global HOST_QUEUE
 
+    # Put host in queue
     HOST_QUEUE.put_nowait(host)
     # Check if the host is already visited
     if host in visited:
@@ -148,6 +149,7 @@ async def discover_network(host, username, password, visited):
 # A function to save the information to excel
 def save_to_excel(details_list):
     global HOST
+
     # Create a dataframe from the network dictionary
     df = pd.DataFrame(details_list, columns=["LOCAL_HOST",
                                              "LOCAL_IP",
