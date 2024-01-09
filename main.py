@@ -28,19 +28,18 @@ parser.add_argument("-s", "--site_name", help="Site name used for the name of th
                     required=True,
                     )
 
-args = parser.parse_args()
-USERNAME = args.USERNAME
+ARGS = parser.parse_args()
+USERNAME = ARGS.USERNAME
 PASSWORD = getpass("Enter your password: ")
-HOST = args.HOST
-SITE_NAME = args.SITE_NAME
+HOST = ARGS.HOST
+SITE_NAME = ARGS.SITE_NAME
 CDP_NEIGHBOUR_DETAILS = list()
 DATE_TIME_NOW = datetime.datetime.now()
 DATE_NOW = DATE_TIME_NOW.strftime("%d %B %Y")
 TIME_NOW = DATE_TIME_NOW.strftime("%H:%M")
 NEIGHBOURS = list()
 HOSTNAMES = list()
-
-jump_server = ""
+JUMP_SERVER = ""
 
 encryption_algs_list = [
     "aes128-cbc",
@@ -71,7 +70,7 @@ default_credentials = {
 async def run_command(host, command):
     print(f"Trying the following command: {command}, on IP Address: {host}")
     try:
-        async with asyncssh.connect(jump_server, **default_credentials) as tunnel:
+        async with asyncssh.connect(JUMP_SERVER, **default_credentials) as tunnel:
             async with asyncssh.connect(host, tunnel=tunnel, **default_credentials) as conn:
                 result = await conn.run(command, check=True)
                 return result.stdout
