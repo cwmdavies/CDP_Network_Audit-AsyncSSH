@@ -171,8 +171,6 @@ def save_to_excel(details_list):
                                              "REMOTE_PORT",
                                              "MANAGEMENT_IP",
                                              "PLATFORM",
-                                             "SOFTWARE_VERSION",
-                                             "CAPABILITIES"
                                              ])
 
     filepath = f"{SITE_NAME}_CDP_Network_Audit.xlsx"
