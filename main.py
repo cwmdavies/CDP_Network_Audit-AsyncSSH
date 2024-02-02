@@ -154,7 +154,8 @@ def get_facts(output, output2, host):
 # A function to recursively discover all devices in the network using cdp
 async def discover_network(host, username, password, visited):
     global HOST_QUEUE
-
+    if HOST_QUEUE.empty():
+        return
     # Put host in queue
     HOST_QUEUE.put_nowait(host)
     # Check if the host is already visited
@@ -233,6 +234,8 @@ async def main():
 
     # A set to keep track of visited hosts
     visited = set()
+    # Put first host in queue
+    HOST_QUEUE.put_nowait(HOST)
     # Discover the network using cdp
     await discover_network(HOST, USERNAME, PASSWORD, visited)
     # Save the network information to excel
