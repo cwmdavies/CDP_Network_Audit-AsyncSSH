@@ -8,9 +8,6 @@ import datetime
 import argparse
 from getpass import getpass
 
-HOST_QUEUE = asyncio.Queue()
-LIMIT = 5
-
 parser = argparse.ArgumentParser()
 parser.add_argument("-u", "--username", help="Username used to login to the device with.",
                     action="store",
@@ -28,6 +25,14 @@ parser.add_argument("-s", "--site_name", help="Site name used for the name of th
                     required=True,
                     )
 
+parser.add_argument("-d", "--direct", help="True or False: Direct connection to the host."
+                                           "Default is false which goes through a Jump Host.",
+                    action="store",
+                    dest="DIRECT",
+                    required=False,
+                    default=False,
+                    )
+
 ARGS = parser.parse_args()
 USERNAME = ARGS.USERNAME
 PASSWORD = getpass("Enter your password: ")
@@ -39,7 +44,9 @@ DATE_NOW = DATE_TIME_NOW.strftime("%d %B %Y")
 TIME_NOW = DATE_TIME_NOW.strftime("%H:%M")
 NEIGHBOURS = list()
 HOSTNAMES = list()
+HOST_QUEUE = asyncio.Queue()
 JUMP_SERVER = ""
+LIMIT = 5
 
 encryption_algs_list = [
     "aes128-cbc",
@@ -67,13 +74,30 @@ default_credentials = {
 
 
 # A function to connect to a cisco switch and run a command
-async def run_command(host, command):
+async def jump_connection(host, command):
     print(f"Trying the following command: {command}, on IP Address: {host}")
     try:
         async with asyncssh.connect(JUMP_SERVER, **default_credentials) as tunnel:
             async with asyncssh.connect(host, tunnel=tunnel, **default_credentials) as conn:
                 result = await conn.run(command, check=True)
                 return result.stdout
+    except asyncssh.misc.ChannelOpenError:
+        print(f"An error occurred when trying to connect to IP: {host}")
+        return None
+    except TimeoutError:
+        print(f"An Timeout error occurred when trying to connect to IP: {host}")
+        return None
+    except asyncssh.misc.PermissionDenied:
+        print(f"An Authentication error occurred when trying to connect to IP: {host}")
+        return None
+
+
+async def direct_connection(host, command):
+    print(f"Trying the following command: {command}, on IP Address: {host}")
+    try:
+        async with asyncssh.connect(host, **default_credentials) as conn:
+            result = await conn.run(command, check=True)
+            return result.stdout
     except asyncssh.misc.ChannelOpenError:
         print(f"An error occurred when trying to connect to IP: {host}")
         return None
@@ -139,10 +163,18 @@ async def discover_network(host, username, password, visited):
     # Mark the host as visited
     visited.add(host)
     # Run the show cdp neighbour detail command on the host
-    output1 = await run_command(host, "show cdp neighbors detail")
-    # Run the show version command on the host
-    output2 = await run_command(host, "show version")
-    # Parse the cdp output and get the neighbors
+    if ARGS.DIRECT is False:
+        # Run the show version command on the host
+        output1 = await jump_connection(host, "show cdp neighbors detail")
+        # Parse the cdp output and get the neighbors
+        output2 = await jump_connection(host, "show version")
+    else:
+        run_command = direct_connection
+        # Run the show version command on the host
+        output1 = await direct_connection(host, "show cdp neighbors detail")
+        # Parse the cdp output and get the neighbors
+        output2 = await direct_connection(host, "show version")
+
     get_facts(output1, output2, host)
     hosts_list = list()
     # Recursively discover the neighbours
