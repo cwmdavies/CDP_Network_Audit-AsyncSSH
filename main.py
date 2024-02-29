@@ -39,7 +39,11 @@ DATE_NOW = DATE_TIME_NOW.strftime("%d %B %Y")
 TIME_NOW = DATE_TIME_NOW.strftime("%H:%M")
 NEIGHBOURS = list()
 HOSTNAMES = list()
-JUMP_SERVER = ""
+# A set to keep track of visited hosts
+VISITED = set()
+
+# Jump-host for all connections to pass through.
+JUMP_SERVER = "10.251.6.31"
 
 encryption_algs_list = [
     "aes128-cbc",
@@ -86,12 +90,7 @@ async def run_command(host, command):
 
 
 # A function to parse the cdp output and return a list of neighbors
-def get_facts(output, output2, host):
-    global CDP_NEIGHBOUR_DETAILS
-    global NEIGHBOURS
-    global HOSTNAMES
-    global HOST_QUEUE
-
+def get_facts(output, output2, host, neighbour_list, hostnames_list, host_queue):
     if output is None:
         return None
     try:
@@ -110,8 +109,8 @@ def get_facts(output, output2, host):
         serial_numbers = get_version_output[0].get("SERIAL")
         uptime = get_version_output[0].get("UPTIME")
 
-        if hostname not in HOSTNAMES:
-            HOSTNAMES.append(hostname)
+        if hostname not in hostnames_list:
+            hostnames_list.append(hostname)
             for entry in get_cdp_neighbors_output:
                 entry["LOCAL_HOST"] = hostname
                 entry["LOCAL_IP"] = host
@@ -120,47 +119,48 @@ def get_facts(output, output2, host):
                 text = entry['DESTINATION_HOST']
                 head, sep, tail = text.partition('.')
                 entry['DESTINATION_HOST'] = head.upper()
-                CDP_NEIGHBOUR_DETAILS.append(entry)
+                neighbour_list.append(entry)
                 if 'Switch' in entry['CAPABILITIES'] and "Host" not in entry['CAPABILITIES']:
-                    HOST_QUEUE.put_nowait(entry["MANAGEMENT_IP"])
+                    host_queue.put_nowait(entry["MANAGEMENT_IP"])
     except Exception as err:
         print(f"An error occurred for host {host} : {err}")
 
 
 # A function to recursively discover all devices in the network using cdp
-async def discover_network(host, username, password, visited):
-    global HOST_QUEUE
-    if HOST_QUEUE.empty():
-        return
-    # Put host in queue
-    HOST_QUEUE.put_nowait(host)
-    # Check if the host is already visited
+async def discover_network(host, username, password, visited, queue):
+    semaphore = asyncio.Semaphore(LIMIT)
     if host in visited:
         return
-    # Mark the host as visited
     visited.add(host)
-    # Run the show cdp neighbour detail command on the host
-    output1 = await run_command(host, "show cdp neighbors detail")
-    # Run the show version command on the host
-    output2 = await run_command(host, "show version")
-    # Parse the cdp output and get the neighbors
-    get_facts(output1, output2, host)
-    hosts_list = list()
-    # Recursively discover the neighbours
-    try:
-        for i in range(LIMIT):
-            if HOST_QUEUE.empty():
+
+    async def process_host(host, semaphore):
+        async with semaphore:  # Acquire the semaphore before proceeding
+            for attempt in range(3):
+                try:
+                    output1 = await run_command(host, "show cdp neighbors detail")
+                    output2 = await run_command(host, "show version")
+                    get_facts(output1, output2, host, CDP_NEIGHBOUR_DETAILS, HOSTNAMES, HOST_QUEUE)
+                    # Discover neighbors on this host
+                    await discover_network(host, username, password, visited, queue)
+                    break  # Success
+                except (asyncio.TimeoutError, asyncssh.Error) as err:
+                    print(f"Error on host {host}, attempt {attempt + 1}: {err}")
+                    await asyncio.sleep(2)
+
+    # Process hosts in parallel
+    tasks = []
+    while not queue.empty():
+        for _ in range(LIMIT):  # Create a batch of tasks
+            if queue.empty():
                 break
-            hosts_list.append(HOST_QUEUE.get_nowait())
-        get_facts_tasks = (discover_network(host, username, password, visited) for host in hosts_list)
-        await asyncio.gather(*get_facts_tasks)
-    except Exception as err:
-        print(f"An error occurred for host {host} : {err}")
+            host = queue.get_nowait()
+            tasks.append(asyncio.create_task(process_host(host, semaphore)))
+
+        await asyncio.gather(*tasks)  # Wait for tasks in this batch
 
 
 # A function to save the information to excel
-def save_to_excel(details_list):
-    global HOST
+def save_to_excel(details_list, host):
 
     # Create a dataframe from the network dictionary
     df = pd.DataFrame(details_list, columns=["LOCAL_HOST",
@@ -183,7 +183,7 @@ def save_to_excel(details_list):
     ws1["B4"] = SITE_NAME
     ws1["B5"] = DATE_NOW
     ws1["B6"] = TIME_NOW
-    ws1["B7"] = HOST
+    ws1["B7"] = host
     wb.save(filepath)
     wb.close()
 
@@ -195,19 +195,12 @@ def save_to_excel(details_list):
 
 # The main function
 async def main():
-    global CDP_NEIGHBOUR_DETAILS
-    global HOST
-    global USERNAME
-    global PASSWORD
-
-    # A set to keep track of visited hosts
-    visited = set()
     # Put first host in queue
     HOST_QUEUE.put_nowait(HOST)
     # Discover the network using cdp
-    await discover_network(HOST, USERNAME, PASSWORD, visited)
+    await discover_network(HOST, USERNAME, PASSWORD, VISITED, HOST_QUEUE)
     # Save the network information to excel
-    save_to_excel(CDP_NEIGHBOUR_DETAILS)
+    save_to_excel(CDP_NEIGHBOUR_DETAILS, HOST)
 
 # Run the main function
 asyncio.run(main())
