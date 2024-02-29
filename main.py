@@ -8,9 +8,6 @@ import datetime
 import argparse
 from getpass import getpass
 
-HOST_QUEUE = asyncio.Queue()
-LIMIT = 5
-
 parser = argparse.ArgumentParser()
 parser.add_argument("-u", "--username", help="Username used to login to the device with.",
                     action="store",
@@ -39,6 +36,9 @@ DATE_NOW = DATE_TIME_NOW.strftime("%d %B %Y")
 TIME_NOW = DATE_TIME_NOW.strftime("%H:%M")
 NEIGHBOURS = list()
 HOSTNAMES = list()
+HOST_QUEUE = asyncio.Queue()
+LIMIT = 5
+
 # A set to keep track of visited hosts
 VISITED = set()
 
