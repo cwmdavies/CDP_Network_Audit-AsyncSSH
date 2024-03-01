@@ -1,3 +1,5 @@
+#!/usr/local/bin/python3
+# -*- coding: cp1252 -*-
 import asyncio
 import asyncssh
 import pandas as pd
@@ -94,13 +96,13 @@ def get_facts(output, output2, host, neighbour_list, hostnames_list, host_queue)
     if output is None:
         return None
     try:
-        with open(f"ProgramFiles/textfsm/cisco_ios_show_cdp_neighbors_detail.textfsm") as f:
+        with open(f"ProgramFiles/textfsm/cisco_ios_show_cdp_neighbors_detail.textfsm", "r", encoding="cp1252") as f:
             re_table = textfsm.TextFSM(f)
             result = re_table.ParseText(output)
         get_cdp_neighbors_output = [dict(zip(re_table.header, entry)) for entry in result]
 
         # Parse Show Version Output
-        with open(f"ProgramFiles/textfsm/cisco_ios_show_version.textfsm") as f:
+        with open(f"ProgramFiles/textfsm/cisco_ios_show_version.textfsm", "r", encoding="cp1252") as f:
             re_table = textfsm.TextFSM(f)
             result2 = re_table.ParseText(output2)
         get_version_output = [dict(zip(re_table.header, entry)) for entry in result2]
@@ -133,18 +135,18 @@ async def discover_network(host, username, password, visited, queue):
         return
     visited.add(host)
 
-    async def process_host(host, semaphore):
-        async with semaphore:  # Acquire the semaphore before proceeding
+    async def process_host(host_ip, semaphore_token):
+        async with semaphore_token:  # Acquire the semaphore before proceeding
             for attempt in range(3):
                 try:
-                    output1 = await run_command(host, "show cdp neighbors detail")
-                    output2 = await run_command(host, "show version")
-                    get_facts(output1, output2, host, CDP_NEIGHBOUR_DETAILS, HOSTNAMES, HOST_QUEUE)
+                    output1 = await run_command(host_ip, "show cdp neighbors detail")
+                    output2 = await run_command(host_ip, "show version")
+                    get_facts(output1, output2, host_ip, CDP_NEIGHBOUR_DETAILS, HOSTNAMES, HOST_QUEUE)
                     # Discover neighbors on this host
-                    await discover_network(host, username, password, visited, queue)
+                    await discover_network(host_ip, username, password, visited, queue)
                     break  # Success
                 except (asyncio.TimeoutError, asyncssh.Error) as err:
-                    print(f"Error on host {host}, attempt {attempt + 1}: {err}")
+                    print(f"Error on host {host_ip}, attempt {attempt + 1}: {err}")
                     await asyncio.sleep(2)
 
     # Process hosts in parallel
