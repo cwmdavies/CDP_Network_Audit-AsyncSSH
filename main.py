@@ -9,6 +9,7 @@ import openpyxl
 import datetime
 import argparse
 from getpass import getpass
+from ProgramFiles import config_params
 
 parser = argparse.ArgumentParser()
 parser.add_argument("-u", "--username", help="Username used to login to the device with.",
@@ -39,13 +40,14 @@ TIME_NOW = DATE_TIME_NOW.strftime("%H:%M")
 NEIGHBOURS = list()
 HOSTNAMES = list()
 HOST_QUEUE = asyncio.Queue()
-LIMIT = 5
+
+# Configuration Parameters from ini file
+LIMIT = int(config_params.Settings["LIMIT"])
+TIMEOUT = int(config_params.Settings["TIMEOUT"])
+JUMP_SERVER = config_params.Jump_Servers["ACTIVE"]
 
 # A set to keep track of visited hosts
 VISITED = set()
-
-# Jump-host for all connections to pass through.
-JUMP_SERVER = "10.251.6.31"
 
 encryption_algs_list = [
     "aes128-cbc",
@@ -68,7 +70,7 @@ default_credentials = {
     "known_hosts": None,
     "encryption_algs": encryption_algs_list,
     "kex_algs": kex_algs_list,
-    "connect_timeout": 10,
+    "connect_timeout": TIMEOUT,
 }
 
 

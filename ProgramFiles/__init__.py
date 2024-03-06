@@ -1,1 +1,1 @@
-__all__ = ["config_params", "MyGui"]
+__all__ = ["config_params"]
