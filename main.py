@@ -81,6 +81,8 @@ default_credentials = {
 # A function to connect to a cisco switch and run a command
 async def run_command(host, command):
     print(f"Trying the following command: {command}, on IP Address: {host}")
+    if host in AUTHENTICATION_ERRORS:
+        return None
     try:
         async with asyncssh.connect(JUMP_SERVER, **default_credentials) as tunnel:
             async with asyncssh.connect(host, tunnel=tunnel, **default_credentials) as conn:
