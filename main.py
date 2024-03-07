@@ -210,7 +210,7 @@ def save_to_excel(details_list, dns_info, host):
                                              "MANAGEMENT_IP",
                                              "PLATFORM",
                                              ])
-    dns_array = pd.DataFrame(DNS_IP.items(), columns=["Hostname", "IP Address"])
+    dns_array = pd.DataFrame(dns_info.items(), columns=["Hostname", "IP Address"])
 
     filepath = f"{SITE_NAME}_CDP_Network_Audit.xlsx"
     excel_template = f"ProgramFiles\\config_files\\1 - CDP Network Audit _ Template.xlsx"
