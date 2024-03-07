@@ -40,6 +40,7 @@ DATE_NOW = DATE_TIME_NOW.strftime("%d %B %Y")
 TIME_NOW = DATE_TIME_NOW.strftime("%H:%M")
 NEIGHBOURS = list()
 HOSTNAMES = list()
+AUTHENTICATION_ERRORS = list()
 HOST_QUEUE = asyncio.Queue()
 DNS_QUEUE = asyncio.Queue()
 DNS_IP = {}
@@ -93,6 +94,8 @@ async def run_command(host, command):
         return None
     except asyncssh.misc.PermissionDenied:
         print(f"An Authentication error occurred when trying to connect to IP: {host}")
+        if host not in AUTHENTICATION_ERRORS:
+            AUTHENTICATION_ERRORS.append(host)
         return None
 
 
@@ -211,6 +214,7 @@ def save_to_excel(details_list, dns_info, host):
                                              "PLATFORM",
                                              ])
     dns_array = pd.DataFrame(dns_info.items(), columns=["Hostname", "IP Address"])
+    auth_array = pd.DataFrame(set(AUTHENTICATION_ERRORS), columns=["Authentication Errors"])
 
     filepath = f"{SITE_NAME}_CDP_Network_Audit.xlsx"
     excel_template = f"ProgramFiles\\config_files\\1 - CDP Network Audit _ Template.xlsx"
@@ -229,6 +233,7 @@ def save_to_excel(details_list, dns_info, host):
     writer = pd.ExcelWriter(filepath, engine='openpyxl', if_sheet_exists="overlay", mode="a")
     df.to_excel(writer, index=False, sheet_name="Audit", header=False, startrow=11)
     dns_array.to_excel(writer, index=False, sheet_name="DNS Resolved", header=False, startrow=4)
+    auth_array.to_excel(writer, index=False, sheet_name="Authentication Errors", header=False, startrow=4)
     writer.close()
 
 
