@@ -2,6 +2,7 @@
 # -*- coding: cp1252 -*-
 import asyncio
 import asyncssh
+import socket
 import pandas as pd
 import textfsm
 import shutil
@@ -40,6 +41,8 @@ TIME_NOW = DATE_TIME_NOW.strftime("%H:%M")
 NEIGHBOURS = list()
 HOSTNAMES = list()
 HOST_QUEUE = asyncio.Queue()
+DNS_QUEUE = asyncio.Queue()
+DNS_IP = {}
 
 # Configuration Parameters from ini file
 LIMIT = int(config_params.Settings["LIMIT"])
@@ -152,19 +155,49 @@ async def discover_network(host, username, password, visited, queue):
                     await asyncio.sleep(2)
 
     # Process hosts in parallel
-    tasks = []
+    hosts_tasks = []
     while not queue.empty():
         for _ in range(LIMIT):  # Create a batch of tasks
             if queue.empty():
                 break
             host = queue.get_nowait()
-            tasks.append(asyncio.create_task(process_host(host, semaphore)))
+            hosts_tasks.append(asyncio.create_task(process_host(host, semaphore)))
 
-        await asyncio.gather(*tasks)  # Wait for tasks in this batch
+        await asyncio.gather(*hosts_tasks)  # Wait for tasks in this batch
+
+
+async def resolve_dns(hostnames, queue):
+    semaphore = asyncio.Semaphore(LIMIT)
+
+    async def process_host(domain_name, semaphore_token):
+        async with semaphore_token:  # Acquire the semaphore before proceeding
+            try:
+                print(f"Attempting to retrieve DNS 'A' record for hostname: {domain_name}")
+                addr1 = socket.gethostbyname(domain_name)
+                DNS_IP[domain_name] = addr1
+                print(f"Successfully retrieved DNS 'A' record for hostname: {domain_name}")
+            except socket.gaierror:
+                print(f"Failed to retrieve DNS A record for hostname: {domain_name}")
+                DNS_IP[domain_name] = "DNS Resolution Failed"
+            except Exception as Err:
+                print(f"An unknown error occurred for hostname: {domain_name}, {Err}",)
+
+    for hostname in hostnames:
+        queue.put_nowait(hostname)
+
+    dns_tasks = []
+    while not queue.empty():
+        for _ in range(LIMIT):  # Create a batch of tasks
+            if queue.empty():
+                break
+            dns_addr = queue.get_nowait()
+            dns_tasks.append(asyncio.create_task(process_host(dns_addr, semaphore)))
+
+        await asyncio.gather(*dns_tasks)  # Wait for tasks in this batch
 
 
 # A function to save the information to excel
-def save_to_excel(details_list, host):
+def save_to_excel(details_list, dns_info, host):
 
     # Create a dataframe from the network dictionary
     df = pd.DataFrame(details_list, columns=["LOCAL_HOST",
@@ -177,6 +210,7 @@ def save_to_excel(details_list, host):
                                              "MANAGEMENT_IP",
                                              "PLATFORM",
                                              ])
+    dns_array = pd.DataFrame(DNS_IP.items(), columns=["Hostname", "IP Address"])
 
     filepath = f"{SITE_NAME}_CDP_Network_Audit.xlsx"
     excel_template = f"ProgramFiles\\config_files\\1 - CDP Network Audit _ Template.xlsx"
@@ -194,6 +228,7 @@ def save_to_excel(details_list, host):
     # Save the dataframe to excel
     writer = pd.ExcelWriter(filepath, engine='openpyxl', if_sheet_exists="overlay", mode="a")
     df.to_excel(writer, index=False, sheet_name="Audit", header=False, startrow=11)
+    dns_array.to_excel(writer, index=False, sheet_name="DNS Resolved", header=False, startrow=4)
     writer.close()
 
 
@@ -203,8 +238,9 @@ async def main():
     HOST_QUEUE.put_nowait(HOST)
     # Discover the network using cdp
     await discover_network(HOST, USERNAME, PASSWORD, VISITED, HOST_QUEUE)
+    await resolve_dns(HOSTNAMES, DNS_QUEUE)
     # Save the network information to excel
-    save_to_excel(CDP_NEIGHBOUR_DETAILS, HOST)
+    save_to_excel(CDP_NEIGHBOUR_DETAILS, DNS_IP, HOST)
 
 # Run the main function
 asyncio.run(main())
