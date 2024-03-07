@@ -41,9 +41,11 @@ TIME_NOW = DATE_TIME_NOW.strftime("%H:%M")
 NEIGHBOURS = list()
 HOSTNAMES = list()
 AUTHENTICATION_ERRORS = list()
+CONNECTION_ERRORS = dict()
+DNS_IP = dict()
 HOST_QUEUE = asyncio.Queue()
 DNS_QUEUE = asyncio.Queue()
-DNS_IP = {}
+
 
 # Configuration Parameters from ini file
 LIMIT = int(config_params.Settings["LIMIT"])
@@ -90,9 +92,13 @@ async def run_command(host, command):
                 return result.stdout
     except asyncssh.misc.ChannelOpenError:
         print(f"An error occurred when trying to connect to IP: {host}")
+        if host not in CONNECTION_ERRORS:
+            CONNECTION_ERRORS[host] = "ChannelOpenError"
         return None
     except TimeoutError:
         print(f"An Timeout error occurred when trying to connect to IP: {host}")
+        if host not in CONNECTION_ERRORS:
+            CONNECTION_ERRORS[host] = "TimeoutError"
         return None
     except asyncssh.misc.PermissionDenied:
         print(f"An Authentication error occurred when trying to connect to IP: {host}")
@@ -202,7 +208,7 @@ async def resolve_dns(hostnames, queue):
 
 
 # A function to save the information to excel
-def save_to_excel(details_list, dns_info, host):
+def save_to_excel(details_list, host):
 
     # Create a dataframe from the network dictionary
     df = pd.DataFrame(details_list, columns=["LOCAL_HOST",
@@ -215,8 +221,9 @@ def save_to_excel(details_list, dns_info, host):
                                              "MANAGEMENT_IP",
                                              "PLATFORM",
                                              ])
-    dns_array = pd.DataFrame(dns_info.items(), columns=["Hostname", "IP Address"])
+    dns_array = pd.DataFrame(DNS_IP.items(), columns=["Hostname", "IP Address"])
     auth_array = pd.DataFrame(set(AUTHENTICATION_ERRORS), columns=["Authentication Errors"])
+    conn_array = pd.DataFrame(CONNECTION_ERRORS.items(), columns=["IP Address", "Error"])
 
     filepath = f"{SITE_NAME}_CDP_Network_Audit.xlsx"
     excel_template = f"ProgramFiles\\config_files\\1 - CDP Network Audit _ Template.xlsx"
@@ -236,6 +243,7 @@ def save_to_excel(details_list, dns_info, host):
     df.to_excel(writer, index=False, sheet_name="Audit", header=False, startrow=11)
     dns_array.to_excel(writer, index=False, sheet_name="DNS Resolved", header=False, startrow=4)
     auth_array.to_excel(writer, index=False, sheet_name="Authentication Errors", header=False, startrow=4)
+    conn_array.to_excel(writer, index=False, sheet_name="Connection Errors", header=False, startrow=4)
     writer.close()
 
 
@@ -247,7 +255,7 @@ async def main():
     await discover_network(HOST, USERNAME, PASSWORD, VISITED, HOST_QUEUE)
     await resolve_dns(HOSTNAMES, DNS_QUEUE)
     # Save the network information to excel
-    save_to_excel(CDP_NEIGHBOUR_DETAILS, DNS_IP, HOST)
+    save_to_excel(CDP_NEIGHBOUR_DETAILS, HOST)
 
 # Run the main function
 asyncio.run(main())
