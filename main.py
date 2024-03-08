@@ -29,22 +29,33 @@ parser.add_argument("-s", "--site_name", help="Site name used for the name of th
                     required=True,
                     )
 
+# Arg Parser Information
 ARGS = parser.parse_args()
-USERNAME = ARGS.USERNAME
-PASSWORD = getpass("Enter your password: ")
 HOST = ARGS.HOST
 SITE_NAME = ARGS.SITE_NAME
-CDP_NEIGHBOUR_DETAILS = list()
+
+# Login Credentials
+USERNAME = ARGS.USERNAME
+PASSWORD = getpass("Enter your password: ")
+ALT_PASSWORD = getpass("Enter the 'Answer' user password: ")
+
+# Current Date and Time information
 DATE_TIME_NOW = datetime.datetime.now()
 DATE_NOW = DATE_TIME_NOW.strftime("%d %B %Y")
 TIME_NOW = DATE_TIME_NOW.strftime("%H:%M")
+
+# Storage Arrays
+CDP_NEIGHBOUR_DETAILS = list()
 NEIGHBOURS = list()
 HOSTNAMES = list()
 AUTHENTICATION_ERRORS = list()
 CONNECTION_ERRORS = dict()
 DNS_IP = dict()
+
+# Async Queues
 HOST_QUEUE = asyncio.Queue()
 DNS_QUEUE = asyncio.Queue()
+RETRY_QUEUE = asyncio.Queue()
 
 
 # Configuration Parameters from ini file
@@ -79,15 +90,26 @@ default_credentials = {
     "connect_timeout": TIMEOUT,
 }
 
+alternative_credentials = {
+    "username": "answer",
+    "password": ALT_PASSWORD,
+    "known_hosts": None,
+    "encryption_algs": encryption_algs_list,
+    "kex_algs": kex_algs_list,
+    "connect_timeout": TIMEOUT,
+}
+
 
 # A function to connect to a cisco switch and run a command
-async def run_command(host, command):
+async def run_command(host, command, credentials=None):
+    if credentials is None:
+        credentials = default_credentials
     print(f"Trying the following command: {command}, on IP Address: {host}")
     if host in AUTHENTICATION_ERRORS:
         return None
     try:
         async with asyncssh.connect(JUMP_SERVER, **default_credentials) as tunnel:
-            async with asyncssh.connect(host, tunnel=tunnel, **default_credentials) as conn:
+            async with asyncssh.connect(host, tunnel=tunnel, **credentials) as conn:
                 result = await conn.run(command, check=True)
                 return result.stdout
     except asyncssh.misc.ChannelOpenError:
@@ -145,21 +167,24 @@ def get_facts(output, output2, host, neighbour_list, hostnames_list, host_queue)
 
 
 # A function to recursively discover all devices in the network using cdp
-async def discover_network(host, username, password, visited, queue):
+async def discover_network(host, visited, queue, credentials=None):
+    if credentials is None:
+        credentials = default_credentials
+
     semaphore = asyncio.Semaphore(LIMIT)
     if host in visited:
         return
-    visited.add(host)
 
     async def process_host(host_ip, semaphore_token):
         async with semaphore_token:  # Acquire the semaphore before proceeding
             for attempt in range(3):
                 try:
-                    output1 = await run_command(host_ip, "show cdp neighbors detail")
-                    output2 = await run_command(host_ip, "show version")
+                    output1 = await run_command(host_ip, "show cdp neighbors detail", credentials)
+                    output2 = await run_command(host_ip, "show version", credentials)
                     get_facts(output1, output2, host_ip, CDP_NEIGHBOUR_DETAILS, HOSTNAMES, HOST_QUEUE)
                     # Discover neighbors on this host
-                    await discover_network(host_ip, username, password, visited, queue)
+                    await discover_network(host_ip, visited, queue)
+                    visited.add(host_ip)
                     break  # Success
                 except (asyncio.TimeoutError, asyncssh.Error) as err:
                     print(f"Error on host {host_ip}, attempt {attempt + 1}: {err}")
@@ -251,9 +276,21 @@ def save_to_excel(details_list, host):
 async def main():
     # Put first host in queue
     HOST_QUEUE.put_nowait(HOST)
-    # Discover the network using cdp
-    await discover_network(HOST, USERNAME, PASSWORD, VISITED, HOST_QUEUE)
+
+    # Recursively Discover the network using CDP
+    await discover_network(HOST, VISITED, HOST_QUEUE)
+
+    # Retry nodes that failed authentication
+    print("Retrying the following nodes that failed authentication")
+    print(AUTHENTICATION_ERRORS)
+    for ip in AUTHENTICATION_ERRORS:
+        RETRY_QUEUE.put_nowait(ip)
+        VISITED.remove(ip)
+        await discover_network(ip, VISITED, RETRY_QUEUE, credentials=alternative_credentials)
+
+    # Reverse DNS lookup on hostnames
     await resolve_dns(HOSTNAMES, DNS_QUEUE)
+
     # Save the network information to excel
     save_to_excel(CDP_NEIGHBOUR_DETAILS, HOST)
 
