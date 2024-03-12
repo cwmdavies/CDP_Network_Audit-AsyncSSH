@@ -57,7 +57,6 @@ HOST_QUEUE = asyncio.Queue()
 DNS_QUEUE = asyncio.Queue()
 RETRY_QUEUE = asyncio.Queue()
 
-
 # Configuration Parameters from ini file
 LIMIT = int(config_params.Settings["LIMIT"])
 TIMEOUT = int(config_params.Settings["TIMEOUT"])
@@ -150,7 +149,7 @@ def get_facts(output, output2, host, neighbour_list, hostnames_list, host_queue)
         uptime = get_version_output[0].get("UPTIME")
 
         if hostname not in hostnames_list:
-            hostnames_list.append(hostname)
+            hostnames_list.add(hostname)
             for entry in get_cdp_neighbors_output:
                 entry["LOCAL_HOST"] = hostname
                 entry["LOCAL_IP"] = host
