@@ -100,15 +100,13 @@ alternative_credentials = {
 
 
 # A function to connect to a cisco switch and run a command
-async def run_command(host, command, credentials=None):
-    if credentials is None:
-        credentials = default_credentials
+async def run_command(host, command):
     print(f"Trying the following command: {command}, on IP Address: {host}")
     if host in AUTHENTICATION_ERRORS:
         return None
     try:
         async with asyncssh.connect(JUMP_SERVER, **default_credentials) as tunnel:
-            async with asyncssh.connect(host, tunnel=tunnel, **credentials) as conn:
+            async with asyncssh.connect(host, tunnel=tunnel, **default_credentials) as conn:
                 result = await conn.run(command, check=True)
                 return result.stdout
     except asyncssh.misc.ChannelOpenError:
@@ -125,7 +123,15 @@ async def run_command(host, command, credentials=None):
         print(f"An Authentication error occurred when trying to connect to IP: {host}")
         if host not in AUTHENTICATION_ERRORS:
             AUTHENTICATION_ERRORS.add(host)
-        return None
+        try:
+            print("Retrying with alternative credentials")
+            async with asyncssh.connect(JUMP_SERVER, **default_credentials) as tunnel:
+                async with asyncssh.connect(host, tunnel=tunnel, **alternative_credentials) as conn:
+                    result = await conn.run(command, check=True)
+                    AUTHENTICATION_ERRORS.remove(host)
+                    return result.stdout
+        except asyncssh.misc.PermissionDenied:
+            return None
 
 
 # A function to parse the cdp output and return a list of neighbors
@@ -166,10 +172,7 @@ def get_facts(output, output2, host, neighbour_list, hostnames_list, host_queue)
 
 
 # A function to recursively discover all devices in the network using cdp
-async def discover_network(host, visited, queue, credentials=None):
-    if credentials is None:
-        credentials = default_credentials
-
+async def discover_network(host, visited, queue):
     semaphore = asyncio.Semaphore(LIMIT)
     if host in visited:
         return
@@ -178,8 +181,8 @@ async def discover_network(host, visited, queue, credentials=None):
         async with semaphore_token:  # Acquire the semaphore before proceeding
             for attempt in range(3):
                 try:
-                    output1 = await run_command(host_ip, "show cdp neighbors detail", credentials)
-                    output2 = await run_command(host_ip, "show version", credentials)
+                    output1 = await run_command(host_ip, "show cdp neighbors detail")
+                    output2 = await run_command(host_ip, "show version")
                     get_facts(output1, output2, host_ip, CDP_NEIGHBOUR_DETAILS, HOSTNAMES, HOST_QUEUE)
                     # Discover neighbors on this host
                     await discover_network(host_ip, visited, queue)
@@ -278,14 +281,6 @@ async def main():
 
     # Recursively Discover the network using CDP
     await discover_network(HOST, VISITED, HOST_QUEUE)
-
-    # Retry nodes that failed authentication
-    print("Retrying the following nodes that failed authentication")
-    print(AUTHENTICATION_ERRORS)
-    for ip in AUTHENTICATION_ERRORS:
-        RETRY_QUEUE.put_nowait(ip)
-        VISITED.remove(ip)
-        await discover_network(ip, VISITED, RETRY_QUEUE, credentials=alternative_credentials)
 
     # Reverse DNS lookup on hostnames
     await resolve_dns(HOSTNAMES, DNS_QUEUE)
