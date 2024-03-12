@@ -205,7 +205,7 @@ async def discover_network(host, visited, queue):
 
 
 async def resolve_dns(hostnames, queue):
-    semaphore = asyncio.Semaphore(LIMIT)
+    semaphore = asyncio.Semaphore(20)
 
     async def process_host(domain_name, semaphore_token):
         async with semaphore_token:  # Acquire the semaphore before proceeding
