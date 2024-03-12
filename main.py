@@ -47,8 +47,8 @@ TIME_NOW = DATE_TIME_NOW.strftime("%H:%M")
 # Storage Arrays
 CDP_NEIGHBOUR_DETAILS = list()
 NEIGHBOURS = list()
-HOSTNAMES = list()
-AUTHENTICATION_ERRORS = list()
+HOSTNAMES = set()
+AUTHENTICATION_ERRORS = set()
 CONNECTION_ERRORS = dict()
 DNS_IP = dict()
 
@@ -125,7 +125,7 @@ async def run_command(host, command, credentials=None):
     except asyncssh.misc.PermissionDenied:
         print(f"An Authentication error occurred when trying to connect to IP: {host}")
         if host not in AUTHENTICATION_ERRORS:
-            AUTHENTICATION_ERRORS.append(host)
+            AUTHENTICATION_ERRORS.add(host)
         return None
 
 
@@ -247,7 +247,7 @@ def save_to_excel(details_list, host):
                                              "PLATFORM",
                                              ])
     dns_array = pd.DataFrame(DNS_IP.items(), columns=["Hostname", "IP Address"])
-    auth_array = pd.DataFrame(set(AUTHENTICATION_ERRORS), columns=["Authentication Errors"])
+    auth_array = pd.DataFrame(AUTHENTICATION_ERRORS, columns=["Authentication Errors"])
     conn_array = pd.DataFrame(CONNECTION_ERRORS.items(), columns=["IP Address", "Error"])
 
     filepath = f"{SITE_NAME}_CDP_Network_Audit.xlsx"
