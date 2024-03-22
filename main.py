@@ -206,7 +206,7 @@ async def discover_network(visited, queue):
         await asyncio.gather(*hosts_tasks)  # Wait for tasks in this batch
 
 
-async def resolve_dns(hostnames, queue):
+async def resolve_dns(hostnames):
     async def process_host(domain_name,):
         try:
             print(f"Attempting to retrieve DNS 'A' record for hostname: {domain_name}")
@@ -219,18 +219,11 @@ async def resolve_dns(hostnames, queue):
         except Exception as Err:
             print(f"An unknown error occurred for hostname: {domain_name}, {Err}",)
 
-    for hostname in hostnames:
-        queue.put_nowait(hostname)
-
     dns_tasks = []
-    while not queue.empty():
-        for _ in range(LIMIT):  # Create a batch of tasks
-            if queue.empty():
-                break
-            dns_addr = queue.get_nowait()
-            dns_tasks.append(asyncio.create_task(process_host(dns_addr)))
+    for hostname in hostnames:
+        dns_tasks.append(asyncio.create_task(process_host(hostname)))
 
-        await asyncio.gather(*dns_tasks)  # Wait for tasks in this batch
+    await asyncio.gather(*dns_tasks)  # Wait for tasks in this batch
 
 
 # A function to save the information to excel
@@ -284,7 +277,7 @@ async def main():
     await discover_network(VISITED, HOST_QUEUE)
 
     # Reverse DNS lookup on hostnames
-    await resolve_dns(HOSTNAMES, DNS_QUEUE)
+    await resolve_dns(HOSTNAMES)
 
     # Save the network information to excel
     save_to_excel(CDP_NEIGHBOUR_DETAILS, HOSTS)
