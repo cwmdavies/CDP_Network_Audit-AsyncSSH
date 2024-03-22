@@ -18,7 +18,10 @@ parser.add_argument("-u", "--username", help="Username used to login to the devi
                     dest="USERNAME",
                     required=True,
                     )
-parser.add_argument("-a", "--ipaddress", help="Password used to login to the device with.",
+parser.add_argument("-a", "--ipaddress",
+                    help="IP Address of the device. "
+                         "Use a comma for multiple devices. "
+                         "Example: 192.168.1.1,192.168.1.2",
                     action="store",
                     dest="HOST",
                     required=True,
@@ -31,7 +34,7 @@ parser.add_argument("-s", "--site_name", help="Site name used for the name of th
 
 # Arg Parser Information
 ARGS = parser.parse_args()
-HOST = ARGS.HOST
+HOSTS = ARGS.HOST.split(",")
 SITE_NAME = ARGS.SITE_NAME
 
 # Login Credentials
@@ -128,7 +131,8 @@ async def run_command(host, command):
             async with asyncssh.connect(JUMP_SERVER, **default_credentials) as tunnel:
                 async with asyncssh.connect(host, tunnel=tunnel, **alternative_credentials) as conn:
                     result = await conn.run(command, check=True)
-                    AUTHENTICATION_ERRORS.remove(host)
+                    if host in AUTHENTICATION_ERRORS:
+                        AUTHENTICATION_ERRORS.remove(host)
                     return result.stdout
         except asyncssh.misc.PermissionDenied:
             return None
@@ -172,20 +176,18 @@ def get_facts(output, output2, host, neighbour_list, hostnames_list, host_queue)
 
 
 # A function to recursively discover all devices in the network using cdp
-async def discover_network(host, visited, queue):
+async def discover_network(visited, queue):
     semaphore = asyncio.Semaphore(LIMIT)
-    if host in visited:
-        return
 
     async def process_host(host_ip, semaphore_token):
+        if host_ip in visited:
+            return
         async with semaphore_token:  # Acquire the semaphore before proceeding
             for attempt in range(3):
                 try:
                     output1 = await run_command(host_ip, "show cdp neighbors detail")
                     output2 = await run_command(host_ip, "show version")
                     get_facts(output1, output2, host_ip, CDP_NEIGHBOUR_DETAILS, HOSTNAMES, HOST_QUEUE)
-                    # Discover neighbors on this host
-                    await discover_network(host_ip, visited, queue)
                     visited.add(host_ip)
                     break  # Success
                 except (asyncio.TimeoutError, asyncssh.Error) as err:
@@ -205,20 +207,17 @@ async def discover_network(host, visited, queue):
 
 
 async def resolve_dns(hostnames, queue):
-    semaphore = asyncio.Semaphore(20)
-
-    async def process_host(domain_name, semaphore_token):
-        async with semaphore_token:  # Acquire the semaphore before proceeding
-            try:
-                print(f"Attempting to retrieve DNS 'A' record for hostname: {domain_name}")
-                addr1 = socket.gethostbyname(domain_name)
-                DNS_IP[domain_name] = addr1
-                print(f"Successfully retrieved DNS 'A' record for hostname: {domain_name}")
-            except socket.gaierror:
-                print(f"Failed to retrieve DNS A record for hostname: {domain_name}")
-                DNS_IP[domain_name] = "DNS Resolution Failed"
-            except Exception as Err:
-                print(f"An unknown error occurred for hostname: {domain_name}, {Err}",)
+    async def process_host(domain_name,):
+        try:
+            print(f"Attempting to retrieve DNS 'A' record for hostname: {domain_name}")
+            addr1 = socket.gethostbyname(domain_name)
+            DNS_IP[domain_name] = addr1
+            print(f"Successfully retrieved DNS 'A' record for hostname: {domain_name}")
+        except socket.gaierror:
+            print(f"Failed to retrieve DNS A record for hostname: {domain_name}")
+            DNS_IP[domain_name] = "DNS Resolution Failed"
+        except Exception as Err:
+            print(f"An unknown error occurred for hostname: {domain_name}, {Err}",)
 
     for hostname in hostnames:
         queue.put_nowait(hostname)
@@ -229,13 +228,13 @@ async def resolve_dns(hostnames, queue):
             if queue.empty():
                 break
             dns_addr = queue.get_nowait()
-            dns_tasks.append(asyncio.create_task(process_host(dns_addr, semaphore)))
+            dns_tasks.append(asyncio.create_task(process_host(dns_addr)))
 
         await asyncio.gather(*dns_tasks)  # Wait for tasks in this batch
 
 
 # A function to save the information to excel
-def save_to_excel(details_list, host):
+def save_to_excel(details_list, hosts):
 
     # Create a dataframe from the network dictionary
     df = pd.DataFrame(details_list, columns=["LOCAL_HOST",
@@ -261,7 +260,8 @@ def save_to_excel(details_list, host):
     ws1["B4"] = SITE_NAME
     ws1["B5"] = DATE_NOW
     ws1["B6"] = TIME_NOW
-    ws1["B7"] = host
+    ws1["B7"] = hosts[0]
+    ws1["B8"] = hosts[1] if len(hosts) > 1 else "Secondary Seed device not given"
     wb.save(filepath)
     wb.close()
 
@@ -276,17 +276,18 @@ def save_to_excel(details_list, host):
 
 # The main function
 async def main():
-    # Put first host in queue
-    HOST_QUEUE.put_nowait(HOST)
+    # Put hosts in queue
+    for entry in HOSTS:
+        HOST_QUEUE.put_nowait(entry)
 
     # Recursively Discover the network using CDP
-    await discover_network(HOST, VISITED, HOST_QUEUE)
+    await discover_network(VISITED, HOST_QUEUE)
 
     # Reverse DNS lookup on hostnames
     await resolve_dns(HOSTNAMES, DNS_QUEUE)
 
     # Save the network information to excel
-    save_to_excel(CDP_NEIGHBOUR_DETAILS, HOST)
+    save_to_excel(CDP_NEIGHBOUR_DETAILS, HOSTS)
 
 # Run the main function
 asyncio.run(main())
